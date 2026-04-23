@@ -1,21 +1,7 @@
 import type { Page } from 'playwright';
 import type { Logger } from './utils/logger.js';
 
-export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
-
-export interface JobRecord<TInput = unknown, TResult = unknown> {
-  id: string;
-  adapter: string;
-  input: TInput;
-  status: JobStatus;
-  createdAt: string;
-  startedAt?: string;
-  finishedAt?: string;
-  result?: TResult;
-  error?: string;
-  progress?: number; // 0..1
-  itemsCollected?: number;
-}
+export type { JobStatus, JobRecord, JobStore } from '@crawlix/database';
 
 export interface AdapterContext {
   page: Page;

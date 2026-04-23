@@ -58,25 +58,49 @@ npm run cli -- run -a google-maps -i "{\"query\":\"coffee\",\"location\":\"Berli
 
 ## Architecture
 
+The project is organized as an npm workspace monorepo:
+
 ```
-src/
-├── adapters/       # One file per data source (implements Adapter<TInput, TResult>)
-├── engine/
-│   ├── browser.ts  # Playwright launch + page acquisition
-│   └── runner.ts   # Job queue (p-queue), cancellation, progress
-├── routes/         # Fastify route modules
-├── store/          # In-memory job store (swap for Postgres/Redis later)
-├── utils/          # Logger, text helpers (email/phone regex)
-├── config.ts       # zod-validated env config
-├── server.ts       # Fastify entrypoint
-└── cli.ts          # Commander CLI
+crawlix/
+├── apps/
+│   ├── backend/              # Fastify API + Playwright engine + adapters
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── adapters/     # One file per data source
+│   │       ├── engine/
+│   │       │   ├── browser.ts  # Playwright launch + page pool
+│   │       │   └── runner.ts   # Job queue (p-queue), cancellation
+│   │       ├── routes/         # Fastify route modules
+│   │       ├── utils/          # Logger, text helpers
+│   │       ├── config.ts       # zod-validated env
+│   │       ├── types.ts        # Adapter / AdapterContext types
+│   │       ├── server.ts       # Fastify entrypoint
+│   │       └── cli.ts          # Commander CLI
+│   └── frontend/             # Static dashboard (served by backend)
+│       ├── index.html
+│       ├── styles/main.css
+│       └── scripts/app.js
+├── packages/
+│   └── database/             # Persistence layer (swap-in point for Postgres/SQLite)
+│       └── src/
+│           ├── index.ts        # Barrel export
+│           ├── types.ts        # JobRecord, JobStatus, JobStore interface
+│           └── jobs.ts         # InMemoryJobStore + default singleton
+├── package.json              # Root — npm workspaces, scripts, deps
+└── tsconfig.json             # Compiles backend + database together
 ```
+
+Backend imports the database via the workspace package `@crawlix/database`.
 
 ### Adding a new adapter
 
-1. Create `src/adapters/<name>.ts` exporting an `Adapter<Input, Result>`.
-2. Register it in `src/adapters/registry.ts`.
-3. Optionally add an example payload to `public/index.html` (`EXAMPLES` map).
+1. Create `apps/backend/src/adapters/<name>.ts` exporting an `Adapter<Input, Result>`.
+2. Register it in `apps/backend/src/adapters/registry.ts`.
+3. Optionally add an example payload to `apps/frontend/scripts/app.js` (`EXAMPLES` map).
+
+### Swapping the database
+
+`packages/database` exposes a `JobStore` interface. The default `InMemoryJobStore` can be replaced with a Postgres/SQLite implementation without touching backend code.
 
 ## Roadmap (post-MVP)
 

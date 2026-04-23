@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
@@ -16,9 +16,9 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
 
   await app.register(cors, { origin: true });
 
-  // Serve the dashboard from /public
+  // Serve the dashboard (apps/frontend) as static assets.
   await app.register(fastifyStatic, {
-    root: path.resolve(__dirname, '../public'),
+    root: path.resolve(__dirname, '../../../apps/frontend'),
     prefix: '/',
     decorateReply: false,
   });
@@ -52,6 +52,7 @@ async function main(): Promise<void> {
 }
 
 // Run only when this file is the entrypoint.
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {
+const entryArg = process.argv[1];
+if (entryArg && pathToFileURL(entryArg).href === import.meta.url) {
   void main();
 }

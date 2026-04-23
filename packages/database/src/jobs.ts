@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
-import type { JobRecord } from '../types.js';
+import type { JobRecord, JobStatus, JobStore } from './types.js';
 
-class JobStore {
+export class InMemoryJobStore implements JobStore {
   private jobs = new Map<string, JobRecord>();
 
   create(input: Omit<JobRecord, 'id' | 'status' | 'createdAt'>): JobRecord {
@@ -27,7 +27,7 @@ class JobStore {
     return updated;
   }
 
-  list(opts?: { status?: JobRecord['status']; limit?: number }): JobRecord[] {
+  list(opts?: { status?: JobStatus; limit?: number }): JobRecord[] {
     const all = Array.from(this.jobs.values()).sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
     );
@@ -36,4 +36,4 @@ class JobStore {
   }
 }
 
-export const jobStore = new JobStore();
+export const jobStore: JobStore = new InMemoryJobStore();

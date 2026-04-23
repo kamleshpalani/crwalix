@@ -4,16 +4,20 @@
   "private": true,
   "description": "Crawlix — a pluggable scraping platform (Outscraper-style) built on Node.js + Playwright.",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "bin": {
-    "crawlix": "./dist/cli.js"
+    "crawlix": "./apps/backend/dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "dev": "tsx watch apps/backend/src/server.ts",
+    "start": "node apps/backend/dist/server.js",
     "build": "tsc -p tsconfig.json",
-    "cli": "tsx src/cli.ts",
+    "cli": "tsx apps/backend/src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\"",
+    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\"",
     "postinstall": "playwright install chromium || true"
   },
   "dependencies": {
