@@ -3,9 +3,10 @@
 -- Or paste into the Supabase SQL editor.
 
 -- Helper: read the current organization id from session config.
-create or replace function public.current_org() returns uuid
+-- Returns text because Prisma stores @default(uuid()) ids as TEXT, not pg UUID.
+create or replace function public.current_org() returns text
 language sql stable as $$
-  select nullif(current_setting('app.current_org', true), '')::uuid;
+  select nullif(current_setting('app.current_org', true), '');
 $$;
 
 -- Enable RLS on every tenant-scoped table.
