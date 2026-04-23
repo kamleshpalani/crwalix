@@ -111,6 +111,7 @@ model User {
 model Organization {
   id               String   @id @default(uuid())
   slug             String   @unique
+  clerkOrgId       String?  @unique
   name             String
   plan             Plan     @default(FREE)
   stripeCustomerId String?  @unique

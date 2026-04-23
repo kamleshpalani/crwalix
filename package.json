@@ -11,7 +11,10 @@
   "scripts": {
     "legacy:dev": "tsx watch apps/backend/src/server.ts",
     "legacy:cli": "tsx apps/backend/src/cli.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "web:dev": "npm run dev --workspace @crawlix/web",
+    "web:build": "npm run build --workspace @crawlix/web",
+    "worker:dev": "npm run dev --workspace @crawlix/worker",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @crawlix/web && npm run typecheck --workspace @crawlix/worker",
     "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\"",
     "db:generate": "npm run prisma:generate --workspace @crawlix/db",
     "db:migrate": "npm run prisma:migrate --workspace @crawlix/db",
