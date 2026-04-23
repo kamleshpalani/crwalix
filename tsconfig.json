@@ -16,8 +16,19 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@crawlix/database": ["packages/database/src/index.ts"]
+      "@crawlix/database": ["packages/database/src/index.ts"],
+      "@crawlix/shared": ["packages/shared/src/index.ts"],
+      "@crawlix/providers": ["packages/providers/src/index.ts"],
+      "@crawlix/scoring": ["packages/scoring/src/index.ts"],
+      "@crawlix/db": ["packages/db/src/index.ts"]
     }
   },
-  "include": ["apps/backend/src/**/*.ts", "packages/database/src/**/*.ts"]
+  "include": [
+    "apps/backend/src/**/*.ts",
+    "packages/database/src/**/*.ts",
+    "packages/shared/src/**/*.ts",
+    "packages/providers/src/**/*.ts",
+    "packages/scoring/src/**/*.ts",
+    "packages/db/src/**/*.ts"
+  ]
 }

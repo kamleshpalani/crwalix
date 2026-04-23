@@ -2,23 +2,21 @@
   "name": "crawlix",
   "version": "0.1.0",
   "private": true,
-  "description": "Crawlix — a pluggable scraping platform (Outscraper-style) built on Node.js + Playwright.",
+  "description": "Crawlix — local business lead intelligence SaaS platform.",
   "type": "module",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
-  "bin": {
-    "crawlix": "./apps/backend/dist/cli.js"
-  },
   "scripts": {
-    "dev": "tsx watch apps/backend/src/server.ts",
-    "start": "node apps/backend/dist/server.js",
-    "build": "tsc -p tsconfig.json",
-    "cli": "tsx apps/backend/src/cli.ts",
+    "legacy:dev": "tsx watch apps/backend/src/server.ts",
+    "legacy:cli": "tsx apps/backend/src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\"",
-    "postinstall": "playwright install chromium || true"
+    "db:generate": "npm run prisma:generate --workspace @crawlix/db",
+    "db:migrate": "npm run prisma:migrate --workspace @crawlix/db",
+    "db:deploy": "npm run prisma:deploy --workspace @crawlix/db",
+    "db:studio": "npm run prisma:studio --workspace @crawlix/db"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
