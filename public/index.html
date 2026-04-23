@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crawlix</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --border: #222830;
+        --fg: #e6e6e6;
+        --muted: #8a95a5;
+        --accent: #5eb3ff;
+        --ok: #4ade80;
+        --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header { padding: 20px 28px; border-bottom: 1px solid var(--border); }
+      header h1 { margin: 0; font-size: 20px; letter-spacing: 0.5px; }
+      header small { color: var(--muted); }
+      main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 16px; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+      select, textarea, input, button {
+        width: 100%; background: #0f1318; color: var(--fg); border: 1px solid var(--border);
+        border-radius: 8px; padding: 8px 10px; font: inherit;
+      }
+      textarea { min-height: 140px; font-family: ui-monospace, monospace; font-size: 12px; }
+      button { background: var(--accent); color: #06121e; font-weight: 600; cursor: pointer; border: 0; margin-top: 12px; }
+      button:disabled { opacity: 0.6; cursor: wait; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th { color: var(--muted); font-weight: 500; }
+      .status { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+      .status.completed { color: var(--ok); }
+      .status.failed, .status.canceled { color: var(--err); }
+      .status.running { color: var(--accent); }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: var(--muted); }
+      .row { display: flex; gap: 8px; align-items: center; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Crawlix <small>— pluggable scraping engine</small></h1>
+    </header>
+    <main>
+      <section class="card">
+        <h3 style="margin-top:0">New job</h3>
+        <label for="adapter">Adapter</label>
+        <select id="adapter"></select>
+        <label for="input">Input (JSON)</label>
+        <textarea id="input" spellcheck="false"></textarea>
+        <button id="submit">Run</button>
+        <p id="error" style="color: var(--err); font-size: 12px; min-height: 16px; margin: 10px 0 0;"></p>
+      </section>
+      <section class="card">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0">Jobs</h3>
+          <button id="refresh" style="width: auto; padding: 6px 10px; background: #1f2530; color: var(--fg);">Refresh</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Adapter</th><th>Status</th><th>Items</th><th>Created</th><th></th></tr>
+          </thead>
+          <tbody id="jobs"></tbody>
+        </table>
+        <pre id="detail"></pre>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const EXAMPLES = {
+        'google-maps': { query: 'coffee shops', location: 'Berlin', limit: 10 },
+        'google-serp': { query: 'best vscode extensions', limit: 10 },
+        'email-phone': { url: 'https://example.com', maxPages: 2 },
+        'yelp': { query: 'pizza', location: 'New York', limit: 10 },
+        'amazon': { query: 'mechanical keyboard', limit: 10 },
+        'instagram': { username: 'nasa' },
+        'generic': { url: 'https://news.ycombinator.com', selector: '.athing', fields: { title: '.titleline a' } },
+      };
+
+      async function loadAdapters() {
+        const r = await fetch('/api/adapters').then((r) => r.json());
+        const sel = $('adapter');
+        sel.innerHTML = '';
+        for (const a of r.adapters) {
+          const opt = document.createElement('option');
+          opt.value = a.name;
+          opt.textContent = `${a.name} — ${a.description}`;
+          sel.appendChild(opt);
+        }
+        sel.onchange = () => { $('input').value = JSON.stringify(EXAMPLES[sel.value] ?? {}, null, 2); };
+        sel.onchange();
+      }
+
+      async function loadJobs() {
+        const r = await fetch('/api/jobs?limit=50').then((r) => r.json());
+        const tbody = $('jobs');
+        tbody.innerHTML = '';
+        for (const j of r.jobs) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><code>${j.id}</code></td>
+            <td>${j.adapter}</td>
+            <td><span class="status ${j.status}">${j.status}</span></td>
+            <td>${j.itemsCollected ?? ''}</td>
+            <td>${new Date(j.createdAt).toLocaleTimeString()}</td>
+            <td><button data-id="${j.id}" style="width:auto;padding:4px 8px;background:#1f2530;color:var(--fg);">View</button></td>
+          `;
+          tr.querySelector('button').onclick = async () => {
+            const full = await fetch(`/api/jobs/${j.id}`).then((r) => r.json());
+            $('detail').textContent = JSON.stringify(full, null, 2);
+          };
+          tbody.appendChild(tr);
+        }
+      }
+
+      $('submit').onclick = async () => {
+        $('error').textContent = '';
+        $('submit').disabled = true;
+        try {
+          const body = { adapter: $('adapter').value, input: JSON.parse($('input').value) };
+          const res = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) throw new Error(JSON.stringify(await res.json()));
+          await loadJobs();
+        } catch (e) {
+          $('error').textContent = e.message;
+        } finally {
+          $('submit').disabled = false;
+        }
+      };
+
+      $('refresh').onclick = loadJobs;
+      loadAdapters();
+      loadJobs();
+      setInterval(loadJobs, 2500);
+    </script>
+  </body>
+</html>
