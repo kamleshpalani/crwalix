@@ -8,12 +8,18 @@ import {
   type SearchIngestJob
 } from '@crawlix/shared';
 import { Queue } from 'bullmq';
-import { getConnection } from '../lib/redis.js';
-import { logger } from '../lib/logger.js';
-import { normalizedName } from './normalize.js';
-import { resolveSearchProvider } from '../providers/index.js';
+import { getConnection } from '../lib/redis';
+import { logger } from '../lib/logger';
+import { normalizedName } from './normalize';
+import { resolveSearchProvider } from '../providers/index';
 
-const scoringQueue = new Queue(QueueName.SCORING, { connection: getConnection() });
+let _scoringQueue: Queue | null = null;
+function scoringQueue(): Queue {
+  if (!_scoringQueue) {
+    _scoringQueue = new Queue(QueueName.SCORING, { connection: getConnection() });
+  }
+  return _scoringQueue;
+}
 
 export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
   const log = logger.child({ job: 'search.ingest', runId: job.searchRunId });
@@ -86,7 +92,7 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
     } while (cursor);
 
     if (job.options.scoreOnInsert && insertedLeadIds.length > 0) {
-      await scoringQueue.addBulk(
+      await scoringQueue().addBulk(
         insertedLeadIds.map((leadId) => ({
           name: JobName.SCORE_LEAD,
           data: { organizationId: job.organizationId, leadId, rulesetVersion: 'v1.0.0' }

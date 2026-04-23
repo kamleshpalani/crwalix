@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { CreateSearchSchema } from '@crawlix/shared';
-import { requireOrg, isResponse } from '@/lib/auth';
+import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import { searchesService } from '@/server/services/searches.service';
 
 export async function GET(req: Request) {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx;
+  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') ?? undefined;
   const items = await searchesService.list(ctx.orgId, projectId);
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx;
+  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const parsed = CreateSearchSchema.safeParse(body);
   if (!parsed.success) {

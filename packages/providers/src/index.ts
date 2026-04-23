@@ -1,3 +1,3 @@
-export * from './types.js';
-export * from './registry.js';
-export { googlePlacesProvider } from './search/google-places.js';
+export * from './types';
+export * from './registry';
+export { googlePlacesProvider } from './search/google-places';

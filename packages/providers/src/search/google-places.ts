@@ -9,7 +9,7 @@
  * Fields mask controlled via X-Goog-FieldMask header.
  */
 import { BusinessStatus, type NormalizedLead } from '@crawlix/shared';
-import type { ProviderContext, SearchPage, SearchProvider, SearchQuery } from '../types.js';
+import type { ProviderContext, SearchPage, SearchProvider, SearchQuery } from '../types';
 
 const BASE = 'https://places.googleapis.com/v1/places';
 const FIELD_MASK = [

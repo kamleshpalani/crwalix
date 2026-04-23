@@ -1,7 +1,7 @@
 import { withOrg } from '@crawlix/db';
 import { defaultRuleset, score, type ScorableLead } from '@crawlix/scoring';
 import { WebsiteStatus, BusinessStatus, type ScoreLeadJob } from '@crawlix/shared';
-import { logger } from '../lib/logger.js';
+import { logger } from '../lib/logger';
 
 export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
   const log = logger.child({ job: 'score.lead', leadId: job.leadId });

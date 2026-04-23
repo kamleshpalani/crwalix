@@ -1,9 +1,18 @@
+import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
+import url from 'node:url';
+
+// Load .env.local from the worker workspace, then fall back to repo root.
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+loadEnv({ path: path.resolve(__dirname, '../.env.local') });
+loadEnv({ path: path.resolve(__dirname, '../../../.env.local') });
+
 import { Worker, type Job } from 'bullmq';
 import { JobName, QueueName, type ScoreLeadJob, type SearchIngestJob } from '@crawlix/shared';
-import { getConnection } from './lib/redis.js';
-import { logger } from './lib/logger.js';
-import { runSearchIngest } from './pipelines/search-ingest.js';
-import { runScoreLead } from './pipelines/score-lead.js';
+import { getConnection } from './lib/redis';
+import { logger } from './lib/logger';
+import { runSearchIngest } from './pipelines/search-ingest';
+import { runScoreLead } from './pipelines/score-lead';
 
 const connection = getConnection();
 

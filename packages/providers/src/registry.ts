@@ -1,4 +1,4 @@
-import type { SearchProvider, EnrichmentProvider } from './types.js';
+import type { SearchProvider, EnrichmentProvider } from './types';
 
 const searchProviders = new Map<string, SearchProvider>();
 const enrichmentProviders = new Map<string, EnrichmentProvider>();

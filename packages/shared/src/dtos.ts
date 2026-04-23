@@ -5,7 +5,7 @@ import {
   ExportFormat,
   PriorityTier,
   WebsiteStatus,
-} from './enums.js';
+} from './enums';
 
 /** Normalized lead shape produced by a search provider adapter. */
 export const NormalizedLeadSchema = z.object({

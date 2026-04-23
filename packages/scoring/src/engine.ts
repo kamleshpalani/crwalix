@@ -1,5 +1,5 @@
 import { PriorityTier } from '@crawlix/shared';
-import type { Ruleset, ScorableLead, ScoreContribution, ScoreResult } from './types.js';
+import type { Ruleset, ScorableLead, ScoreContribution, ScoreResult } from './types';
 
 export function score(lead: ScorableLead, ruleset: Ruleset): ScoreResult {
   const breakdown: ScoreContribution[] = [];

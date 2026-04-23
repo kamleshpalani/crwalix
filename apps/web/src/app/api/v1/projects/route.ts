@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
-import { requireOrg, isResponse } from '@/lib/auth';
+import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import { projectsService, CreateProjectSchema } from '@/server/services/projects.service';
 
 export async function GET() {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx;
+  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const items = await projectsService.list(ctx.orgId);
   return NextResponse.json({ items });
 }
 
 export async function POST(req: Request) {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx;
+  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const parsed = CreateProjectSchema.safeParse(body);
   if (!parsed.success) {

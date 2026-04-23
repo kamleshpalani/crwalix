@@ -1,5 +1,5 @@
-import type { EnrichmentKind, ExportFormat } from './enums.js';
-import type { LeadFilter } from './dtos.js';
+import type { EnrichmentKind, ExportFormat } from './enums';
+import type { LeadFilter } from './dtos';
 
 /** Job name constants — also used as BullMQ job names. */
 export const JobName = {

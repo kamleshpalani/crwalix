@@ -3,27 +3,34 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@crawlix/db';
 
 export interface AuthContext {
-  userId: string;
+  userId: string; // Crawlix User.id (internal)
+  clerkUserId: string;
   clerkOrgId: string;
   orgId: string;
   role: string;
 }
 
+export type AuthError = { code: 'UNAUTHORIZED' | 'NO_ORG' };
+
+export function isResponse(x: unknown): x is NextResponse {
+  return x instanceof NextResponse;
+}
+
+export function isAuthError(x: unknown): x is AuthError {
+  return typeof x === 'object' && x !== null && 'code' in x;
+}
+
 /**
  * Resolve the current Clerk session → Crawlix Organization row.
- * Creates mirror rows if missing (first-login bootstrap).
- * Throws via NextResponse on failure; callers return the thrown response.
+ * Returns AuthError if not logged in or no active org.
  */
-export async function requireOrg(): Promise<AuthContext | NextResponse> {
+export async function requireOrg(): Promise<AuthContext | NextResponse | AuthError> {
   const { userId, orgId: clerkOrgId, orgRole } = auth();
   if (!userId) {
     return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Sign in required' } }, { status: 401 });
   }
   if (!clerkOrgId) {
-    return NextResponse.json(
-      { error: { code: 'NO_ORG', message: 'No active organization — create or select one.' } },
-      { status: 403 }
-    );
+    return { code: 'NO_ORG' } satisfies AuthError;
   }
 
   const org = await prisma.organization.upsert({
@@ -32,15 +39,11 @@ export async function requireOrg(): Promise<AuthContext | NextResponse> {
     create: { clerkOrgId, slug: clerkOrgId.toLowerCase(), name: 'New Organization' }
   });
 
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { clerkId: userId },
     update: {},
     create: { clerkId: userId, email: `${userId}@placeholder.local` }
   });
 
-  return { userId, clerkOrgId, orgId: org.id, role: orgRole ?? 'member' };
-}
-
-export function isResponse(x: unknown): x is NextResponse {
-  return x instanceof NextResponse;
+  return { userId: user.id, clerkUserId: userId, clerkOrgId, orgId: org.id, role: orgRole ?? 'member' };
 }

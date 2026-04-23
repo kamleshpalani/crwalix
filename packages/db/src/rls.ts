@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from './client.js';
+import { prisma } from './client';
 
 /**
  * Runs `fn` inside a Postgres transaction with `app.current_org` set so RLS

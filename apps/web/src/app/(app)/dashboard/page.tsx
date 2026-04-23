@@ -1,10 +1,11 @@
-import { requireOrg, isResponse } from '@/lib/auth';
+import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import { projectsService } from '@/server/services/projects.service';
+import NoOrgBanner from '@/components/NoOrgBanner';
 
 export default async function DashboardPage() {
   const ctx = await requireOrg();
   if (isResponse(ctx)) return null;
-
+  if (isAuthError(ctx)) return <NoOrgBanner />;
   const projects = await projectsService.list(ctx.orgId);
 
   return (
@@ -20,7 +21,7 @@ export default async function DashboardPage() {
         <ul className="mt-3 divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
           {projects.length === 0 && (
             <li className="p-4 text-sm text-slate-500">
-              No projects yet. Create one via <code>POST /api/v1/projects</code>.
+              No projects yet. <a href="/projects" className="underline">Create one</a>.
             </li>
           )}
           {projects.map((p) => (

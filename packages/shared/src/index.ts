@@ -1,3 +1,3 @@
-export * from './enums.js';
-export * from './dtos.js';
-export * from './jobs.js';
+export * from './enums';
+export * from './dtos';
+export * from './jobs';

@@ -1,5 +1,5 @@
 import { BusinessStatus, WebsiteStatus } from '@crawlix/shared';
-import type { Ruleset, ScoreRule } from '../types.js';
+import type { Ruleset, ScoreRule } from '../types';
 
 const missingWebsite: ScoreRule = {
   id: 'missing_website',
