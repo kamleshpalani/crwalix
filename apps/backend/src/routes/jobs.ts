@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { jobStore } from '@crawlix/database';
+import { jobStore } from '../store.js';
 import { enqueueJob, cancelJob } from '../engine/runner.js';
 import { getAdapter, listAdapters } from '../adapters/registry.js';
 

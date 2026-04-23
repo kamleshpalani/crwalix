@@ -102,6 +102,24 @@ Backend imports the database via the workspace package `@crawlix/database`.
 
 `packages/database` exposes a `JobStore` interface. The default `InMemoryJobStore` can be replaced with a Postgres/SQLite implementation without touching backend code.
 
+## Supabase (persistence)
+
+Jobs can be persisted to Supabase Postgres.
+
+1. Create a project at https://supabase.com.
+2. In the SQL editor, run [packages/database/supabase/migrations/0001_init.sql](packages/database/supabase/migrations/0001_init.sql).
+3. Copy `Project URL`, `anon`, and `service_role` keys from **Project Settings → API**.
+4. Set in your `.env`:
+   ```env
+   JOB_STORE=supabase
+   SUPABASE_URL=https://<project-ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+   SUPABASE_ANON_KEY=<anon-key>
+   ```
+5. Restart `npm run dev`. You'll see `Job store ready driver=supabase` in the logs.
+
+> The `service_role` key bypasses RLS and must never be exposed to the browser. It is only read by the backend.
+
 ## Roadmap (post-MVP)
 
 - Persistent storage (Postgres) + job history.

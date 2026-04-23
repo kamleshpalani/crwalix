@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { getAdapter } from '../adapters/registry.js';
 import { acquirePage } from './browser.js';
-import { jobStore } from '@crawlix/database';
+import { jobStore } from '../store.js';
 import type { JobRecord } from '../types.js';
 
 const queue = new PQueue({ concurrency: config.BROWSER_CONCURRENCY });

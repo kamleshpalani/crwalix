@@ -13,6 +13,11 @@ const schema = z.object({
   NAV_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   DEFAULT_LOCALE: z.string().default('en-US'),
   DEFAULT_USER_AGENT: z.string().optional(),
+
+  JOB_STORE: z.enum(['memory', 'supabase']).default('memory'),
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_ANON_KEY: z.string().optional(),
 });
 
 export const config = schema.parse(process.env);
