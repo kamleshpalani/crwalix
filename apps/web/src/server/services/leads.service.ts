@@ -1,5 +1,13 @@
 import { withOrg } from '@crawlix/db';
-import type { LeadFilter, LeadStatus } from '@crawlix/shared';
+import {
+  EnrichmentKind,
+  EnrichmentStatus,
+  JobName,
+  QueueName,
+  type LeadFilter,
+  type LeadStatus
+} from '@crawlix/shared';
+import { enqueue } from '@/lib/queue';
 
 export const leadsService = {
   async list(orgId: string, filter: LeadFilter) {
@@ -132,6 +140,39 @@ export const leadsService = {
         select: { tags: true }
       });
     });
+  },
+
+  /** Manually queue a website-validation enrichment for a lead. */
+  async auditWebsite(
+    orgId: string,
+    leadId: string
+  ): Promise<{ ok: true; enrichmentId: string } | { ok: false; reason: string }> {
+    const lead = await withOrg(orgId, (tx) =>
+      tx.lead.findFirst({ where: { id: leadId }, select: { id: true, website: true } })
+    );
+    if (!lead) return { ok: false, reason: 'Lead not found' };
+    if (!lead.website) return { ok: false, reason: 'Lead has no website to audit' };
+
+    const enrichment = await withOrg(orgId, (tx) =>
+      tx.enrichment.create({
+        data: {
+          organizationId: orgId,
+          leadId,
+          kind: EnrichmentKind.WEBSITE_VALIDATION,
+          provider: 'crawlix-auditor',
+          status: EnrichmentStatus.QUEUED
+        }
+      })
+    );
+
+    await enqueue(QueueName.ENRICHMENT, JobName.ENRICH_WEBSITE, {
+      organizationId: orgId,
+      enrichmentId: enrichment.id,
+      leadId,
+      kind: EnrichmentKind.WEBSITE_VALIDATION,
+      provider: 'crawlix-auditor'
+    });
+    return { ok: true, enrichmentId: enrichment.id };
   }
 };
 

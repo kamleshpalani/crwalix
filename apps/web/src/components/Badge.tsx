@@ -81,3 +81,19 @@ export function websiteTone(s: string | null | undefined): BadgeTone {
       return 'slate';
   }
 }
+
+export function websiteHealthTone(h: string | null | undefined): BadgeTone {
+  switch (h) {
+    case 'FRESH':
+      return 'emerald';
+    case 'NEEDS_REVIEW':
+      return 'amber';
+    case 'OUTDATED':
+      return 'rose';
+    case 'UNREACHABLE':
+      return 'rose';
+    case 'NOT_AUDITED':
+    default:
+      return 'slate';
+  }
+}

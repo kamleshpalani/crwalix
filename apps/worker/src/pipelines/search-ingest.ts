@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { withOrg } from '@crawlix/db';
 import {
+  EnrichmentKind,
+  EnrichmentStatus,
   JobName,
+  LeadFocus,
   QueueName,
   WebsiteStatus,
   type NormalizedLead,
@@ -21,6 +24,14 @@ function scoringQueue(): Queue {
   return _scoringQueue;
 }
 
+let _enrichmentQueue: Queue | null = null;
+function enrichmentQueue(): Queue {
+  if (!_enrichmentQueue) {
+    _enrichmentQueue = new Queue(QueueName.ENRICHMENT, { connection: getConnection() });
+  }
+  return _enrichmentQueue;
+}
+
 export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
   const log = logger.child({ job: 'search.ingest', runId: job.searchRunId });
   log.info({ provider: job.provider }, 'search ingest start');
@@ -35,7 +46,22 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
   let totalFetched = 0;
   let totalInserted = 0;
   let totalDuplicate = 0;
+  let totalFiltered = 0;
   const insertedLeadIds: string[] = [];
+  const leadFocus = job.options.leadFocus ?? LeadFocus.ALL;
+
+  /**
+   * Returns true if the worker should drop this lead before persisting.
+   *  - NO_WEBSITE  → drop anything with a website (highest precision).
+   *  - HIGH_OR_MED → keep everything; the website-audit enrichment will
+   *                  later categorize live sites and the scoring engine
+   *                  will tier them (FRESH = low priority, OUTDATED = med).
+   *  - ALL         → keep everything (no filter).
+   */
+  const shouldFilter = (r: NormalizedLead): boolean => {
+    if (leadFocus === LeadFocus.NO_WEBSITE) return Boolean(r.website);
+    return false;
+  };
 
   try {
     const provider = resolveSearchProvider(job.provider);
@@ -64,6 +90,10 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
 
       await withOrg(job.organizationId, async (tx) => {
         for (const r of page.leads) {
+          if (shouldFilter(r)) {
+            totalFiltered++;
+            continue;
+          }
           const inserted = await upsertLead(tx, job.organizationId, r);
           if (inserted.created) {
             totalInserted++;
@@ -113,18 +143,70 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       })
     );
 
+    // Auto-trigger website audits when the search is in HIGH_OR_MED mode so
+    // that leads with live websites get categorized as FRESH/OUTDATED and
+    // re-scored into the right priority tier.
+    if (leadFocus === LeadFocus.HIGH_OR_MED && insertedLeadIds.length > 0) {
+      const leadsWithWebsites = await withOrg(job.organizationId, (tx) =>
+        tx.lead.findMany({
+          where: { id: { in: insertedLeadIds }, website: { not: null } },
+          select: { id: true }
+        })
+      );
+      if (leadsWithWebsites.length > 0) {
+        const enrichments = await withOrg(job.organizationId, async (tx) => {
+          const created = await Promise.all(
+            leadsWithWebsites.map((l) =>
+              tx.enrichment.create({
+                data: {
+                  organizationId: job.organizationId,
+                  leadId: l.id,
+                  kind: EnrichmentKind.WEBSITE_VALIDATION,
+                  provider: 'crawlix-auditor',
+                  status: EnrichmentStatus.QUEUED
+                }
+              })
+            )
+          );
+          return created;
+        });
+        await enrichmentQueue().addBulk(
+          enrichments.map((e) => ({
+            name: JobName.ENRICH_WEBSITE,
+            data: {
+              organizationId: job.organizationId,
+              enrichmentId: e.id,
+              leadId: e.leadId,
+              kind: EnrichmentKind.WEBSITE_VALIDATION,
+              provider: 'crawlix-auditor'
+            }
+          }))
+        );
+        log.info({ count: enrichments.length }, 'queued website audits');
+      }
+    }
+
     await withOrg(job.organizationId, (tx) =>
       tx.usageLog.create({
         data: {
           organizationId: job.organizationId,
           kind: 'search.run',
           units: 1,
-          metadata: { provider: job.provider, fetched: totalFetched, inserted: totalInserted }
+          metadata: {
+            provider: job.provider,
+            fetched: totalFetched,
+            inserted: totalInserted,
+            filtered: totalFiltered,
+            leadFocus
+          }
         }
       })
     );
 
-    log.info({ totalFetched, totalInserted, totalDuplicate }, 'search ingest done');
+    log.info(
+      { totalFetched, totalInserted, totalDuplicate, totalFiltered, leadFocus },
+      'search ingest done'
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.error({ err: message }, 'search ingest failed');

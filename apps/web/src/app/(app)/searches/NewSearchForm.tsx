@@ -128,6 +128,33 @@ export default function NewSearchForm({
             </select>
           </div>
 
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-ink-700">
+              Lead focus
+              <span className="ml-1 font-normal text-ink-500">
+                — only persist leads that match this filter during ingest
+              </span>
+            </label>
+            <select
+              name="leadFocus"
+              defaultValue="NO_WEBSITE"
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="NO_WEBSITE">
+                High priority only — businesses without a website
+              </option>
+              <option value="HIGH_OR_MED">
+                High + medium — no website or website needs review
+              </option>
+              <option value="ALL">All leads (no filter)</option>
+            </select>
+            <p className="mt-1 text-xs text-ink-500">
+              Selecting <strong>High priority only</strong> drops every result
+              that already has a website attached, so you only spend credits
+              and storage on prospects you can actually pitch a new site to.
+            </p>
+          </div>
+
           <div className="col-span-2 flex items-center gap-2 pt-2">
             <button
               type="submit"

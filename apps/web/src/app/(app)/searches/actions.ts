@@ -26,6 +26,10 @@ export async function createSearchAction(formData: FormData): Promise<SearchActi
       | 'foursquare'
       | 'yelp_fusion'
       | 'osm',
+    leadFocus: (String(formData.get('leadFocus') ?? 'ALL') || 'ALL') as
+      | 'ALL'
+      | 'NO_WEBSITE'
+      | 'HIGH_OR_MED',
     enrichOnInsert: false,
     scoreOnInsert: true
   };

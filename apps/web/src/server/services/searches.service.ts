@@ -42,6 +42,7 @@ export const searchesService = {
           radiusMeters: input.radiusMeters,
           resultLimit: input.resultLimit,
           provider: input.provider,
+          leadFocus: input.leadFocus,
           createdById: userId
         }
       });
@@ -74,7 +75,8 @@ export const searchesService = {
       },
       options: {
         enrichOnInsert: input.enrichOnInsert,
-        scoreOnInsert: input.scoreOnInsert
+        scoreOnInsert: input.scoreOnInsert,
+        leadFocus: input.leadFocus
       }
     });
 
@@ -112,7 +114,11 @@ export const searchesService = {
         radiusMeters: search.radiusMeters ?? undefined,
         limit: search.resultLimit
       },
-      options: { enrichOnInsert: false, scoreOnInsert: true }
+      options: {
+        enrichOnInsert: false,
+        scoreOnInsert: true,
+        leadFocus: (search.leadFocus as 'ALL' | 'NO_WEBSITE' | 'HIGH_OR_MED') ?? 'ALL'
+      }
     });
 
     return { run, jobId };

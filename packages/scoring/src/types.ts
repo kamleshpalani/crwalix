@@ -1,9 +1,12 @@
-import type { PriorityTier, WebsiteStatus, BusinessStatus } from '@crawlix/shared';
+import type { PriorityTier, WebsiteStatus, WebsiteHealth, BusinessStatus } from '@crawlix/shared';
 
 /** Minimum lead shape the scoring engine needs. */
 export interface ScorableLead {
   id: string;
   websiteStatus: WebsiteStatus;
+  /** Outcome of the website-validation enrichment, if it has run. */
+  websiteHealth?: WebsiteHealth | null;
+  websiteHealthScore?: number | null;
   businessStatus: BusinessStatus;
   rating: number | null | undefined;
   reviewCount: number | null | undefined;

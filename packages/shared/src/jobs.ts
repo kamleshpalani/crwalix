@@ -1,4 +1,4 @@
-import type { EnrichmentKind, ExportFormat } from './enums';
+import type { EnrichmentKind, ExportFormat, LeadFocus } from './enums';
 import type { LeadFilter } from './dtos';
 
 /** Job name constants — also used as BullMQ job names. */
@@ -50,7 +50,12 @@ export interface SearchIngestJob {
     radiusMeters?: number;
     limit: number;
   };
-  options: { enrichOnInsert: boolean; scoreOnInsert: boolean };
+  options: {
+    enrichOnInsert: boolean;
+    scoreOnInsert: boolean;
+    /** Lead-focus filter; worker drops non-matching leads before insert. */
+    leadFocus?: LeadFocus;
+  };
 }
 
 export interface EnrichmentJob {

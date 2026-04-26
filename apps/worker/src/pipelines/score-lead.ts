@@ -1,6 +1,6 @@
 import { withOrg } from '@crawlix/db';
 import { defaultRuleset, score, type ScorableLead } from '@crawlix/scoring';
-import { WebsiteStatus, BusinessStatus, type ScoreLeadJob } from '@crawlix/shared';
+import { WebsiteStatus, WebsiteHealth, BusinessStatus, type ScoreLeadJob } from '@crawlix/shared';
 import { logger } from '../lib/logger';
 
 export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
@@ -15,6 +15,8 @@ export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
     const scorable: ScorableLead = {
       id: lead.id,
       websiteStatus: lead.websiteStatus as WebsiteStatus,
+      websiteHealth: (lead.websiteHealth as WebsiteHealth) ?? null,
+      websiteHealthScore: lead.websiteHealthScore ?? null,
       businessStatus: lead.businessStatus as BusinessStatus,
       rating: lead.rating,
       reviewCount: lead.reviewCount,

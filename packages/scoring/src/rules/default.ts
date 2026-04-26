@@ -1,4 +1,4 @@
-import { BusinessStatus, WebsiteStatus } from '@crawlix/shared';
+import { BusinessStatus, WebsiteHealth, WebsiteStatus } from '@crawlix/shared';
 import type { Ruleset, ScoreRule } from '../types';
 
 const missingWebsite: ScoreRule = {
@@ -17,6 +17,31 @@ const missingWebsite: ScoreRule = {
         return { contribution: -10, reason: 'Already has a website' };
       default:
         return { contribution: 0, reason: 'Website status unknown' };
+    }
+  },
+};
+
+/**
+ * Refines the missing-website signal once the website-validation enrichment
+ * has run. An OUTDATED live site is a prime redesign-pitch candidate
+ * (medium tier), while a FRESH site demotes the lead to LOW.
+ */
+const websiteHealthRule: ScoreRule = {
+  id: 'website_health',
+  weight: 1,
+  applies: (l) => Boolean(l.websiteHealth) && l.websiteHealth !== WebsiteHealth.NOT_AUDITED,
+  evaluate: (l) => {
+    switch (l.websiteHealth) {
+      case WebsiteHealth.UNREACHABLE:
+        return { contribution: 35, reason: 'Website unreachable / parked' };
+      case WebsiteHealth.OUTDATED:
+        return { contribution: 30, reason: 'Outdated site — strong redesign candidate' };
+      case WebsiteHealth.NEEDS_REVIEW:
+        return { contribution: 15, reason: 'Site has aging/legacy signals' };
+      case WebsiteHealth.FRESH:
+        return { contribution: -25, reason: 'Modern, well-maintained site' };
+      default:
+        return { contribution: 0, reason: 'Website not yet audited' };
     }
   },
 };
@@ -77,6 +102,6 @@ const chainLikelihood: ScoreRule = {
 
 export const defaultRuleset: Ruleset = {
   version: 'v1.0.0',
-  rules: [missingWebsite, businessStatusRule, reviewActivity, ratingRule, chainLikelihood],
+  rules: [missingWebsite, websiteHealthRule, businessStatusRule, reviewActivity, ratingRule, chainLikelihood],
   tiers: { high: 75, medium: 45 },
 };

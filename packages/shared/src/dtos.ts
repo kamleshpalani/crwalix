@@ -3,6 +3,7 @@ import {
   BusinessStatus,
   EnrichmentKind,
   ExportFormat,
+  LeadFocus,
   LeadStatus,
   PriorityTier,
   WebsiteStatus,
@@ -67,6 +68,8 @@ export const CreateSearchSchema = z.object({
   radiusMeters: z.number().int().positive().max(50_000).optional(),
   resultLimit: z.number().int().positive().max(500).default(100),
   provider: z.enum(['google_places', 'foursquare', 'yelp_fusion', 'osm']),
+  /** Lead-focus filter applied during ingest. Default keeps every lead. */
+  leadFocus: z.nativeEnum(LeadFocus).default(LeadFocus.ALL),
   enrichOnInsert: z.boolean().default(true),
   scoreOnInsert: z.boolean().default(true),
 });

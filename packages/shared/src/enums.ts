@@ -34,12 +34,52 @@ export const WebsiteStatus = {
 } as const;
 export type WebsiteStatus = (typeof WebsiteStatus)[keyof typeof WebsiteStatus];
 
+/**
+ * Outcome of the website-validation enrichment. Determines whether a lead
+ * with a live website is a redesign-pitch candidate (medium priority) or
+ * already has a healthy modern site (low priority).
+ *  - FRESH         → modern, recently maintained site → low value lead.
+ *  - NEEDS_REVIEW  → live but mediocre signals (some staleness, missing
+ *                    mobile viewport, old copyright, etc.). Worth a manual
+ *                    look — medium priority.
+ *  - OUTDATED      → multiple strong staleness signals → strong candidate
+ *                    for a redesign pitch.
+ *  - UNREACHABLE   → site URL is dead, parked, or non-resolvable → treat
+ *                    like "no website" → high priority.
+ *  - NOT_AUDITED   → audit hasn't run yet (default state).
+ */
+export const WebsiteHealth = {
+  FRESH: 'FRESH',
+  NEEDS_REVIEW: 'NEEDS_REVIEW',
+  OUTDATED: 'OUTDATED',
+  UNREACHABLE: 'UNREACHABLE',
+  NOT_AUDITED: 'NOT_AUDITED',
+} as const;
+export type WebsiteHealth = (typeof WebsiteHealth)[keyof typeof WebsiteHealth];
+
 export const PriorityTier = {
   HIGH: 'HIGH',
   MEDIUM: 'MEDIUM',
   LOW: 'LOW',
 } as const;
 export type PriorityTier = (typeof PriorityTier)[keyof typeof PriorityTier];
+
+/**
+ * Per-search filter that decides which leads the worker actually persists
+ * during ingest. Drives the "find prospects without a website" workflow.
+ *  - ALL          → keep every lead returned by the provider (default).
+ *  - NO_WEBSITE   → only keep leads whose provider record has no website.
+ *  - HIGH_OR_MED  → keep no-website + ambiguous-website leads (drops only
+ *                   leads that already have a confirmed live website). Use
+ *                   this once website-validation enrichment is live so
+ *                   "needs redesign" prospects aren't filtered out.
+ */
+export const LeadFocus = {
+  ALL: 'ALL',
+  NO_WEBSITE: 'NO_WEBSITE',
+  HIGH_OR_MED: 'HIGH_OR_MED',
+} as const;
+export type LeadFocus = (typeof LeadFocus)[keyof typeof LeadFocus];
 
 export const EnrichmentKind = {
   WEBSITE_VALIDATION: 'WEBSITE_VALIDATION',

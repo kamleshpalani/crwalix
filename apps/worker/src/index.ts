@@ -8,11 +8,12 @@ loadEnv({ path: path.resolve(__dirname, '../.env.local') });
 loadEnv({ path: path.resolve(__dirname, '../../../.env.local') });
 
 import { Worker, type Job } from 'bullmq';
-import { JobName, QueueName, type ScoreLeadJob, type SearchIngestJob } from '@crawlix/shared';
+import { JobName, QueueName, type EnrichmentJob, type ScoreLeadJob, type SearchIngestJob } from '@crawlix/shared';
 import { getConnection } from './lib/redis';
 import { logger } from './lib/logger';
 import { runSearchIngest } from './pipelines/search-ingest';
 import { runScoreLead } from './pipelines/score-lead';
+import { runWebsiteEnrichment } from './pipelines/enrich-website';
 import { googleCacheCleanup } from './pipelines/compliance-cleanup';
 
 const connection = getConnection();
@@ -53,9 +54,18 @@ const scoringWorker = makeWorker<ScoreLeadJob>(
   8
 );
 
+const enrichmentWorker = makeWorker<EnrichmentJob>(
+  QueueName.ENRICHMENT,
+  async (name, data) => {
+    if (name === JobName.ENRICH_WEBSITE) return runWebsiteEnrichment(data);
+    logger.warn({ name }, 'unknown enrichment job');
+  },
+  4
+);
+
 async function shutdown(sig: string): Promise<void> {
   logger.info({ sig }, 'shutting down');
-  await Promise.all([searchWorker.close(), scoringWorker.close()]);
+  await Promise.all([searchWorker.close(), scoringWorker.close(), enrichmentWorker.close()]);
   await connection.quit();
   process.exit(0);
 }

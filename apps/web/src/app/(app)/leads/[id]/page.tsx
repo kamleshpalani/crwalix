@@ -2,11 +2,18 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
-import { Badge, priorityTone, statusTone, websiteTone } from '@/components/Badge';
+import {
+  Badge,
+  priorityTone,
+  statusTone,
+  websiteTone,
+  websiteHealthTone
+} from '@/components/Badge';
 import { leadsService } from '@/server/services/leads.service';
 import LeadStatusControl from './LeadStatusControl';
 import LeadNotes from './LeadNotes';
 import LeadTags from './LeadTags';
+import AuditWebsiteButton from './AuditWebsiteButton';
 
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
   const ctx = await requireOrg();
@@ -116,6 +123,8 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
         <LeadTags leadId={lead.id} initial={lead.tags ?? []} />
       </Card>
 
+      <WebsiteAuditCard lead={lead} />
+
       <Card title="Notes">
         <LeadNotes leadId={lead.id} initial={lead.notes ?? null} />
       </Card>
@@ -188,6 +197,73 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-baseline justify-between gap-3 text-sm">
       <span className="text-ink-500">{label}</span>
       <span className="text-right text-ink-900 break-words">{value ?? <span className="text-ink-400">—</span>}</span>
+    </div>
+  );
+}
+
+type WebsiteAuditPayload = {
+  signals?: Record<string, unknown>;
+  issues?: string[];
+};
+
+function WebsiteAuditCard({
+  lead
+}: {
+  lead: {
+    id: string;
+    website: string | null;
+    websiteHealth?: string | null;
+    websiteHealthScore?: number | null;
+    websiteAudit?: unknown;
+    websiteAuditedAt?: Date | null;
+  };
+}) {
+  const health = lead.websiteHealth ?? 'NOT_AUDITED';
+  const audit = (lead.websiteAudit ?? null) as WebsiteAuditPayload | null;
+  const issues = Array.isArray(audit?.issues) ? (audit!.issues as string[]) : [];
+  const auditedAt = lead.websiteAuditedAt
+    ? new Date(lead.websiteAuditedAt).toISOString().slice(0, 16).replace('T', ' ')
+    : null;
+
+  return (
+    <div className="glass p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-ink-900">Website audit</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge tone={websiteHealthTone(health)}>
+              {health.replaceAll('_', ' ').toLowerCase()}
+            </Badge>
+            {typeof lead.websiteHealthScore === 'number' && (
+              <span className="text-xs text-ink-600">
+                health score <span className="font-mono">{lead.websiteHealthScore}/100</span>
+              </span>
+            )}
+            {auditedAt && (
+              <span className="text-xs text-ink-500">audited {auditedAt}</span>
+            )}
+          </div>
+        </div>
+        <AuditWebsiteButton leadId={lead.id} hasWebsite={Boolean(lead.website)} />
+      </div>
+
+      {issues.length > 0 && (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ink-700">
+          {issues.map((issue, i) => (
+            <li key={i}>{issue}</li>
+          ))}
+        </ul>
+      )}
+      {issues.length === 0 && health !== 'NOT_AUDITED' && (
+        <p className="mt-3 text-sm text-ink-500">No issues detected.</p>
+      )}
+      {health === 'NOT_AUDITED' && (
+        <p className="mt-3 text-sm text-ink-500">
+          {lead.website
+            ? 'Run an audit to detect outdated tech stacks, missing mobile viewports, dead pages, and more.'
+            : 'No website on file — nothing to audit.'}
+        </p>
+      )}
     </div>
   );
 }

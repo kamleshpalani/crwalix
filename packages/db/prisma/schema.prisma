@@ -194,6 +194,8 @@ model Search {
   radiusMeters   Int?
   resultLimit    Int      @default(100)
   provider       String
+  /// Per-search ingest filter: ALL | NO_WEBSITE | HIGH_OR_MED.
+  leadFocus      String   @default("ALL")
   createdById    String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -237,6 +239,14 @@ model Lead {
   phoneNormalized   String?
   website           String?
   websiteStatus     WebsiteStatus  @default(UNKNOWN)
+  /// Outcome of latest website-validation enrichment.
+  /// One of WebsiteHealth (FRESH | NEEDS_REVIEW | OUTDATED | UNREACHABLE | NOT_AUDITED).
+  websiteHealth     String         @default("NOT_AUDITED")
+  /// 0–100 health score. 100 = pristine modern site, 0 = unreachable.
+  websiteHealthScore Int?
+  /// Structured findings (issues + signals) from the auditor.
+  websiteAudit      Json?
+  websiteAuditedAt  DateTime?
   sourceUrl         String?
   address           String?
   addressNormalized String?

@@ -58,12 +58,26 @@ export default async function SearchesPage({
         )}
         {searches.map((s) => {
           const latest = s.runs[0];
+          const focus = (s as { leadFocus?: string }).leadFocus ?? 'ALL';
+          const focusLabel =
+            focus === 'NO_WEBSITE'
+              ? 'No-website only'
+              : focus === 'HIGH_OR_MED'
+              ? 'High + medium'
+              : null;
           return (
             <li key={s.id} className="p-4 hover:bg-white/70">
               <Link href={`/searches/${s.id}`} className="block">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-medium">{s.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{s.name}</span>
+                      {focusLabel && (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
+                          {focusLabel}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-ink-500">
                       {s.provider} · {s.keyword ?? s.niche ?? '—'} · {s.city ?? ''} {s.country ?? ''}
                     </div>
