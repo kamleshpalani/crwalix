@@ -24,6 +24,83 @@ const USER_AGENT =
   process.env.WEBSITE_FETCH_USER_AGENT ??
   'CrawlixBot/1.0 (+https://crawlix.example/bot)';
 
+/**
+ * Polite robots.txt check. Cached per-host for 1 hour. Returns `true` if
+ * the host's robots.txt explicitly disallows our User-Agent (or `*`) from
+ * the audit path. We treat fetch errors as "not disallowed" because many
+ * SMB sites simply lack a robots.txt.
+ */
+const ROBOTS_TTL_MS = 60 * 60 * 1000;
+const robotsCache = new Map<string, { allowed: boolean; expires: number }>();
+
+async function isAllowedByRobots(target: URL, signal?: AbortSignal): Promise<boolean> {
+  const host = target.host;
+  const cached = robotsCache.get(host);
+  if (cached && cached.expires > Date.now()) return cached.allowed;
+
+  const robotsUrl = `${target.protocol}//${host}/robots.txt`;
+  let body = '';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(robotsUrl, {
+      headers: { 'user-agent': USER_AGENT, accept: 'text/plain' },
+      signal: signal ?? ctrl.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      robotsCache.set(host, { allowed: true, expires: Date.now() + ROBOTS_TTL_MS });
+      return true;
+    }
+    body = await res.text();
+  } catch {
+    robotsCache.set(host, { allowed: true, expires: Date.now() + ROBOTS_TTL_MS });
+    return true;
+  }
+
+  // Minimal robots.txt parser. Looks for the most specific UA group that
+  // matches our bot, then `Allow:`/`Disallow:` rules against the path.
+  const path = target.pathname || '/';
+  const lines = body.split(/\r?\n/);
+  const groups: { agents: string[]; rules: { allow: boolean; pattern: string }[] }[] = [];
+  let current: (typeof groups)[number] | null = null;
+  for (const raw of lines) {
+    const line = raw.replace(/#.*$/, '').trim();
+    if (!line) continue;
+    const [k, ...rest] = line.split(':');
+    const key = k.trim().toLowerCase();
+    const value = rest.join(':').trim();
+    if (key === 'user-agent') {
+      if (!current || current.rules.length > 0) {
+        current = { agents: [], rules: [] };
+        groups.push(current);
+      }
+      current.agents.push(value.toLowerCase());
+    } else if (current && (key === 'allow' || key === 'disallow')) {
+      current.rules.push({ allow: key === 'allow', pattern: value });
+    }
+  }
+
+  const ua = USER_AGENT.toLowerCase();
+  let chosen = groups.find((g) => g.agents.some((a) => a !== '*' && ua.includes(a)));
+  if (!chosen) chosen = groups.find((g) => g.agents.includes('*'));
+
+  let allowed = true;
+  if (chosen) {
+    let bestLen = -1;
+    for (const r of chosen.rules) {
+      if (!r.pattern) continue;
+      if (path.startsWith(r.pattern) && r.pattern.length > bestLen) {
+        bestLen = r.pattern.length;
+        allowed = r.allow;
+      }
+    }
+  }
+
+  robotsCache.set(host, { allowed, expires: Date.now() + ROBOTS_TTL_MS });
+  return allowed;
+}
+
 export interface WebsiteAuditResult {
   url: string;
   finalUrl: string | null;
@@ -61,6 +138,12 @@ export async function auditWebsite(rawUrl: string): Promise<WebsiteAuditResult> 
     url = new URL(rawUrl);
   } catch {
     return unreachable(rawUrl, 'invalid-url', auditedAt);
+  }
+
+  // Respect robots.txt before issuing the audit GET.
+  const allowed = await isAllowedByRobots(url).catch(() => true);
+  if (!allowed) {
+    return unreachable(url.toString(), 'robots-disallowed', auditedAt);
   }
 
   const ctrl = new AbortController();

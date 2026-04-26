@@ -14,7 +14,7 @@ import { logger } from './lib/logger';
 import { runSearchIngest } from './pipelines/search-ingest';
 import { runScoreLead } from './pipelines/score-lead';
 import { runWebsiteEnrichment } from './pipelines/enrich-website';
-import { googleCacheCleanup } from './pipelines/compliance-cleanup';
+import { runComplianceCleanup } from './pipelines/compliance-cleanup';
 
 const connection = getConnection();
 
@@ -72,12 +72,13 @@ async function shutdown(sig: string): Promise<void> {
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
-// Google Maps Platform ToS: cached Place data must not be retained longer
-// than 30 days. Run cleanup on boot and every 6 hours thereafter.
-void googleCacheCleanup();
+// Provider ToS compliance: cached data must be purged on a schedule.
+// Google: 30-day max retention. Yelp: 24-hour max retention.
+// Runs on boot and every 1 hour thereafter (Yelp is the tightest window).
+void runComplianceCleanup();
 const complianceTimer = setInterval(
-  () => void googleCacheCleanup(),
-  6 * 60 * 60 * 1000
+  () => void runComplianceCleanup(),
+  60 * 60 * 1000
 );
 complianceTimer.unref();
 

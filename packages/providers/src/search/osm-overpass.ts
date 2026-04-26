@@ -19,6 +19,27 @@ const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const UA = 'Crawlix-Lead-Discovery/1.0 (contact: ops@crawlix.local)';
 
+/**
+ * Nominatim's usage policy caps clients at 1 request per second.
+ * We serialize all calls through a chain of promises and ensure at least
+ * 1100ms passes between successive requests from this process.
+ *   https://operations.osmfoundation.org/policies/nominatim/
+ */
+const NOMINATIM_MIN_GAP_MS = 1100;
+let nominatimChain: Promise<unknown> = Promise.resolve();
+let nominatimLastAt = 0;
+function rateLimitedNominatim<T>(fn: () => Promise<T>): Promise<T> {
+  const next = nominatimChain.then(async () => {
+    const wait = Math.max(0, nominatimLastAt + NOMINATIM_MIN_GAP_MS - Date.now());
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    nominatimLastAt = Date.now();
+    return fn();
+  });
+  // Don't let one failure poison the chain.
+  nominatimChain = next.catch(() => undefined);
+  return next;
+}
+
 interface NominatimResult {
   lat: string;
   lon: string;
@@ -127,10 +148,12 @@ async function resolveBbox(query: SearchQuery, signal: AbortSignal): Promise<Nom
   const q = parts.join(', ');
   if (!q) return null;
   const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=0`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-    signal
-  });
+  const res = await rateLimitedNominatim(() =>
+    fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+      signal
+    })
+  );
   if (!res.ok) throw new Error(`nominatim ${res.status}`);
   const arr = (await res.json()) as NominatimResult[];
   return arr[0] ?? null;

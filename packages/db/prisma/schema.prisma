@@ -396,16 +396,18 @@ model BackgroundJob {
 }
 
 model ProviderConfig {
-  id              String   @id @default(uuid())
-  organizationId  String
-  provider        String
-  enabled         Boolean  @default(true)
-  apiKeyEncrypted String?
-  dailyBudget     Int?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(uuid())
+  organizationId      String
+  provider            String
+  enabled             Boolean  @default(true)
+  apiKeyEncrypted     String?
+  dailyBudget         Int?
+  metadata            Json?
+  termsAcceptedAt     DateTime?
+  termsAcceptedBy     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, provider])
 }
