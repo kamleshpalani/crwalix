@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ClerkProvider } from '@clerk/nextjs';
 import HeaderUser from '@/components/HeaderUser';
 import HeaderOrg from '@/components/HeaderOrg';
 import Sidebar from '@/components/Sidebar';
@@ -8,7 +9,7 @@ import PageTransition from '@/components/PageTransition';
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  return (
+  const shell = (
     <div className="relative min-h-screen">
       <AuroraBackground />
 
@@ -71,4 +72,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+  return hasClerk ? <ClerkProvider>{shell}</ClerkProvider> : shell;
 }

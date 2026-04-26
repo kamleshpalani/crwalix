@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { ClerkProvider } from '@clerk/nextjs';
 import { Inter } from 'next/font/google';
 import '../styles/globals.css';
 
@@ -8,19 +7,20 @@ export const metadata = {
   description: 'Find, score and export high-priority local business leads.'
 };
 
+// This is an auth-gated SaaS — every page reads cookies via Clerk and/or
+// Postgres, so static prerendering would fail. Render everything on demand.
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap'
 });
 
-const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const body = (
+  return (
     <html lang="en" className={inter.variable}>
       <body className="font-sans">{children}</body>
     </html>
   );
-  return hasClerk ? <ClerkProvider>{body}</ClerkProvider> : body;
 }

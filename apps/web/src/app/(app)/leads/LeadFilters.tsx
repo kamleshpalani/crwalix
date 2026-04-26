@@ -26,6 +26,10 @@ export default function LeadFilters() {
   const sp = useSearchParams();
   const [pending, startTransition] = useTransition();
 
+  // useSearchParams() may be null when rendered above the route boundary;
+  // wrap to keep callers terse.
+  const get = (k: string) => sp?.get(k) ?? '';
+
   function update(form: HTMLFormElement) {
     const fd = new FormData(form);
     const params = new URLSearchParams();
@@ -53,7 +57,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">Search</label>
         <input
           name="search"
-          defaultValue={sp.get('search') ?? ''}
+          defaultValue={get('search')}
           placeholder="Name or phone…"
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         />
@@ -62,7 +66,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">City</label>
         <input
           name="city"
-          defaultValue={sp.get('city') ?? ''}
+          defaultValue={get('city')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
@@ -71,7 +75,7 @@ export default function LeadFilters() {
         <input
           name="country"
           maxLength={2}
-          defaultValue={sp.get('country') ?? ''}
+          defaultValue={get('country')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase"
         />
       </div>
@@ -82,7 +86,7 @@ export default function LeadFilters() {
           type="number"
           min={0}
           max={100}
-          defaultValue={sp.get('minScore') ?? ''}
+          defaultValue={get('minScore')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
@@ -90,7 +94,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">Sort</label>
         <select
           name="sort"
-          defaultValue={sp.get('sort') ?? '-score'}
+          defaultValue={(get('sort') || '-score')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         >
           {SORTS.map((s) => (
@@ -105,7 +109,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">Priority tier</label>
         <select
           name="priorityTier"
-          defaultValue={sp.get('priorityTier') ?? ''}
+          defaultValue={get('priorityTier')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         >
           <option value="">Any</option>
@@ -120,7 +124,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">Website status</label>
         <select
           name="websiteStatus"
-          defaultValue={sp.get('websiteStatus') ?? ''}
+          defaultValue={get('websiteStatus')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         >
           <option value="">Any</option>
@@ -135,7 +139,7 @@ export default function LeadFilters() {
         <label className="block text-xs font-medium text-ink-700">Lead status</label>
         <select
           name="status"
-          defaultValue={sp.get('status') ?? ''}
+          defaultValue={get('status')}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         >
           <option value="">Any</option>
@@ -149,7 +153,7 @@ export default function LeadFilters() {
 
       {/* Preserve drilldown filters when present. */}
       {['projectId', 'searchId', 'listId'].map((k) => {
-        const v = sp.get(k);
+        const v = get(k);
         return v ? <input key={k} type="hidden" name={k} value={v} /> : null;
       })}
 

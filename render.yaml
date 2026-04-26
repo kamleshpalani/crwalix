@@ -1,0 +1,28 @@
+# Render.com blueprint for the Crawlix BullMQ worker.
+# Vercel hosts the Next.js web app; Render hosts the long-running worker.
+# Set the env vars in the Render dashboard (do NOT commit secrets here).
+services:
+  - type: worker
+    name: crawlix-worker
+    runtime: docker
+    dockerfilePath: ./apps/worker/Dockerfile
+    dockerContext: .
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: info
