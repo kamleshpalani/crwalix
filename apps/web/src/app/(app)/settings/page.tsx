@@ -2,14 +2,42 @@ import Link from 'next/link';
 import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
 import { providersService } from '@/server/services/providers.service';
+import { outreachService, suppressionService } from '@/server/services/outreach.service';
 import ProviderConfigForm from './ProviderConfigForm';
+import ProviderTermsForm from './ProviderTermsForm';
+import OutreachSettingsForm from './OutreachSettingsForm';
 
-const KNOWN_PROVIDERS: Array<{ id: string; name: string; envHint: string; description: string }> = [
+interface KnownProvider {
+  id: string;
+  name: string;
+  envHint: string;
+  description: string;
+  termsUrl: string;
+}
+
+const KNOWN_PROVIDERS: KnownProvider[] = [
   {
     id: 'google_places',
     name: 'Google Places (New)',
     envHint: 'GOOGLE_PLACES_API_KEY',
-    description: 'Text & nearby search for local businesses.'
+    description: 'Text & nearby search for local businesses.',
+    termsUrl:
+      'https://cloud.google.com/maps-platform/terms/maps-service-terms'
+  },
+  {
+    id: 'yelp',
+    name: 'Yelp Fusion',
+    envHint: 'YELP_FUSION_API_KEY',
+    description: 'Strong for local SMBs; 24-hour cache limit enforced.',
+    termsUrl: 'https://docs.developer.yelp.com/docs/fusion-api-terms-of-use'
+  },
+  {
+    id: 'osm',
+    name: 'OpenStreetMap (Overpass)',
+    envHint: '— (keyless, ODbL attribution required)',
+    description:
+      'Free worldwide POI data under the ODbL — attribution to © OpenStreetMap contributors is required.',
+    termsUrl: 'https://www.openstreetmap.org/copyright'
   }
 ];
 
@@ -20,7 +48,12 @@ export default async function SettingsPage() {
   if (isResponse(ctx)) return null;
   if (isAuthError(ctx)) return <NoOrgBanner />;
 
-  const configs = await providersService.list(ctx.orgId);
+  const [configs, outreach, suppressions] = await Promise.all([
+    providersService.list(ctx.orgId),
+    outreachService.get(ctx.orgId),
+    suppressionService.list(ctx.orgId, 1)
+  ]);
+  const compliance = await outreachService.complianceStatus(ctx.orgId);
   const byProvider = new Map(configs.map((c) => [c.provider, c]));
 
   return (
@@ -28,24 +61,21 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-ink-600">
-          Configure providers and review scoring rules.
+          Configure providers, accept Terms, and review compliance settings.
         </p>
       </div>
 
       <section>
         <h2 className="text-lg font-medium">Search providers</h2>
         <p className="mt-1 text-sm text-ink-500">
-          API keys are read from worker environment variables. Use this panel to
-          enable/disable providers per organization and cap daily spend (units).
+          API keys are read from worker environment variables. You must accept
+          each provider&apos;s Terms before searches against that provider can run.
         </p>
         <ul className="mt-4 space-y-3">
           {KNOWN_PROVIDERS.map((p) => {
             const cfg = byProvider.get(p.id);
             return (
-              <li
-                key={p.id}
-                className="glass p-4"
-              >
+              <li key={p.id} className="glass p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="font-medium">{p.name}</div>
@@ -61,10 +91,30 @@ export default async function SettingsPage() {
                     dailyBudget={cfg?.dailyBudget ?? null}
                   />
                 </div>
+                <ProviderTermsForm
+                  provider={p.id}
+                  termsUrl={p.termsUrl}
+                  acceptedAt={cfg?.termsAcceptedAt ?? null}
+                />
               </li>
             );
           })}
         </ul>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-medium">Outreach compliance</h2>
+        <p className="mt-1 text-sm text-ink-500">
+          Required for any outreach feature. Crawlix will refuse to send email
+          on your behalf until these are filled in.
+        </p>
+        <div className="mt-4 glass p-4">
+          <OutreachSettingsForm
+            initial={outreach}
+            missing={compliance.missing}
+            suppressionCount={suppressions.length}
+          />
+        </div>
       </section>
 
       <section>

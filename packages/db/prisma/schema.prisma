@@ -124,6 +124,8 @@ model Organization {
   usageLogs        UsageLog[]
   apiKeys          ApiKey[]
   providerConfigs  ProviderConfig[]
+  outreachSettings OutreachSettings?
+  outreachSuppressions OutreachSuppression[]
 }
 
 model OrganizationMember {
@@ -410,6 +412,41 @@ model ProviderConfig {
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, provider])
+}
+
+/// Per-organization outreach compliance settings. Required by CAN-SPAM
+/// (truthful sender identity, physical mailing address, opt-out) and GDPR
+/// Art. 14 (disclose data source on first contact). Outreach send paths
+/// MUST refuse to dispatch if these are missing.
+model OutreachSettings {
+  id                   String   @id @default(uuid())
+  organizationId       String   @unique
+  senderName           String?
+  senderCompany        String?
+  senderEmail          String?
+  replyToEmail         String?
+  mailingAddress       String?
+  unsubscribeUrl       String?
+  citeProviderInBody   Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+/// Outreach suppression list. Once an address lands here it must never
+/// receive further marketing email from this org. We hash the email so the
+/// suppression list itself doesn't leak a raw PII corpus.
+model OutreachSuppression {
+  id             String   @id @default(uuid())
+  organizationId String
+  emailHash      String
+  reason         String   @default("UNSUBSCRIBE")
+  source         String?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, emailHash])
+  @@index([organizationId, createdAt])
 }
 
 model ApiKey {

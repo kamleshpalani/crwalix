@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import { searchesService } from '@/server/services/searches.service';
+import { providersService } from '@/server/services/providers.service';
 import { CreateSearchSchema, LeadFocus, PriorityTier } from '@crawlix/shared';
 import { READY_PROVIDER_IDS } from '@/lib/providers';
 import { composeLocation } from '@/lib/locations';
@@ -34,6 +35,18 @@ export async function createSearchAction(formData: FormData): Promise<SearchActi
     return {
       ok: false,
       error: 'Select at least one available provider (Google Places, Yelp, or OpenStreetMap).'
+    };
+  }
+
+  // Compliance gate: we cannot call a third-party provider's API on behalf
+  // of an org until an admin has explicitly accepted that provider's ToS.
+  const missingTerms = await providersService.missingTermsAcceptance(ctx.orgId, providers);
+  if (missingTerms.length > 0) {
+    return {
+      ok: false,
+      error:
+        `Accept the Terms of Service for: ${missingTerms.join(', ')}. ` +
+        `Open Settings → Search providers to accept.`
     };
   }
 
