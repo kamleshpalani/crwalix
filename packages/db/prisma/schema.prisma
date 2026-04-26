@@ -1,0 +1,431 @@
+// packages/db/prisma/schema.prisma
+// Crawlix SaaS — multi-tenant schema.
+// Notes:
+//  - Every tenant-scoped table has organizationId + a Postgres RLS policy
+//    (see packages/db/migrations/0001_rls.sql — added in Phase 1).
+//  - JSONB is used for raw/normalized provider payloads and audit metadata.
+//  - The previously scaffolded /packages/database is deprecated in favor of
+//    this package and will be removed once Phase 1 code migrates.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum Plan {
+  FREE
+  STARTER
+  GROWTH
+  SCALE
+}
+
+enum LeadStatus {
+  NEW
+  ENRICHED
+  REVIEWED
+  EXPORTED
+  ARCHIVED
+}
+
+enum WebsiteStatus {
+  EXISTS
+  EXISTS_MISSING_IN_SOURCE
+  LIKELY_NONE
+  HIGH_CONFIDENCE_NONE
+  UNKNOWN
+}
+
+enum PriorityTier {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum EnrichmentKind {
+  WEBSITE_VALIDATION
+  EMAIL
+  EMAIL_VERIFY
+  SOCIAL
+  COMPANY
+  CONTACT
+}
+
+enum EnrichmentStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum ExportStatus {
+  QUEUED
+  BUILDING
+  READY
+  FAILED
+}
+
+enum ExportFormat {
+  CSV
+  XLSX
+  GOOGLE_SHEETS
+}
+
+enum BusinessStatus {
+  OPERATIONAL
+  CLOSED_TEMP
+  CLOSED_PERM
+  UNKNOWN
+}
+
+model User {
+  id          String   @id @default(uuid())
+  clerkId     String   @unique
+  email       String   @unique
+  fullName    String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  memberships OrganizationMember[]
+  auditLogs   AuditLog[]
+}
+
+model Organization {
+  id               String   @id @default(uuid())
+  slug             String   @unique
+  clerkOrgId       String?  @unique
+  name             String
+  plan             Plan     @default(FREE)
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  members          OrganizationMember[]
+  projects         Project[]
+  subscription     Subscription?
+  usageLogs        UsageLog[]
+  apiKeys          ApiKey[]
+  providerConfigs  ProviderConfig[]
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           Role     @default(MEMBER)
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Subscription {
+  id                   String    @id @default(uuid())
+  organizationId       String    @unique
+  stripeSubscriptionId String?   @unique
+  plan                 Plan
+  status               String
+  currentPeriodEnd     DateTime?
+  cancelAt             DateTime?
+  metadata             Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  organization         Organization @relation(fields: [organizationId], references: [id])
+}
+
+model UsageLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  kind           String
+  units          Int
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, kind, createdAt])
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  searches       Search[]
+  leadLists      LeadList[]
+
+  @@index([organizationId])
+}
+
+model Search {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  name           String
+  niche          String?
+  keyword        String?
+  country        String?
+  state          String?
+  city           String?
+  postalCode     String?
+  radiusMeters   Int?
+  resultLimit    Int      @default(100)
+  provider       String
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs           SearchRun[]
+
+  @@index([organizationId, projectId])
+}
+
+model SearchRun {
+  id             String    @id @default(uuid())
+  organizationId String
+  searchId       String
+  status         JobStatus @default(QUEUED)
+  provider       String
+  totalFetched   Int       @default(0)
+  totalInserted  Int       @default(0)
+  totalDuplicate Int       @default(0)
+  cost           Int       @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  error          String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  search         Search    @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  leads          LeadSource[]
+
+  @@index([organizationId, searchId])
+}
+
+model Lead {
+  id                String   @id @default(uuid())
+  organizationId    String
+  externalPlaceId   String
+  provider          String
+  name              String
+  nameNormalized    String
+  categoryPrimary   String?
+  categories        String[] @default([])
+  phone             String?
+  phoneNormalized   String?
+  website           String?
+  websiteStatus     WebsiteStatus  @default(UNKNOWN)
+  sourceUrl         String?
+  address           String?
+  addressNormalized String?
+  city              String?
+  state             String?
+  country           String?
+  postalCode        String?
+  lat               Float?
+  lng               Float?
+  businessStatus    BusinessStatus @default(UNKNOWN)
+  rating            Float?
+  reviewCount       Int?
+  score             Int?
+  priorityTier      PriorityTier?
+  scoreBreakdown    Json?
+  status            LeadStatus     @default(NEW)
+  notes             String?
+  tags              String[]       @default([])
+  firstSeenAt       DateTime       @default(now())
+  lastSeenAt        DateTime       @default(now())
+  lastEnrichedAt    DateTime?
+  rawPayload        Json
+  normalizedPayload Json
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  sources           LeadSource[]
+  enrichments       Enrichment[]
+  scores            LeadScore[]
+  listMemberships   LeadListItem[]
+
+  @@unique([organizationId, provider, externalPlaceId])
+  @@index([organizationId, nameNormalized])
+  @@index([organizationId, phoneNormalized])
+  @@index([organizationId, websiteStatus])
+  @@index([organizationId, priorityTier, score])
+}
+
+model LeadSource {
+  id          String   @id @default(uuid())
+  leadId      String
+  searchRunId String
+  provider    String
+  rawPayload  Json
+  createdAt   DateTime @default(now())
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  searchRun   SearchRun @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model LeadScore {
+  id             String       @id @default(uuid())
+  leadId         String
+  score          Int
+  priorityTier   PriorityTier
+  breakdown      Json
+  rulesetVersion String
+  createdAt      DateTime     @default(now())
+  lead           Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+}
+
+model Enrichment {
+  id             String           @id @default(uuid())
+  organizationId String
+  leadId         String
+  kind           EnrichmentKind
+  provider       String
+  status         EnrichmentStatus @default(QUEUED)
+  attempts       Int              @default(0)
+  rawResult      Json?
+  normalized     Json?
+  error          String?
+  cost           Int              @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  lead           Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, leadId, kind])
+}
+
+model LeadList {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String?
+  name           String
+  description    String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  items          LeadListItem[]
+
+  @@index([organizationId])
+}
+
+model LeadListItem {
+  id        String   @id @default(uuid())
+  listId    String
+  leadId    String
+  createdAt DateTime @default(now())
+  list      LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, leadId])
+}
+
+model ExportJob {
+  id             String        @id @default(uuid())
+  organizationId String
+  createdById    String
+  format         ExportFormat
+  status         ExportStatus  @default(QUEUED)
+  listId         String?
+  projectId      String?
+  searchId       String?
+  filterJson     Json?
+  storagePath    String?
+  googleSheetId  String?
+  rowCount       Int?
+  error          String?
+  createdAt      DateTime      @default(now())
+  finishedAt     DateTime?
+
+  @@index([organizationId, status])
+}
+
+model BackgroundJob {
+  id             String    @id @default(uuid())
+  organizationId String?
+  queue          String
+  name           String
+  payload        Json
+  status         JobStatus @default(QUEUED)
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(5)
+  lastError      String?
+  scheduledAt    DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([queue, status])
+}
+
+model ProviderConfig {
+  id              String   @id @default(uuid())
+  organizationId  String
+  provider        String
+  enabled         Boolean  @default(true)
+  apiKeyEncrypted String?
+  dailyBudget     Int?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+}
+
+model ApiKey {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  keyHash        String    @unique
+  keyPrefix      String
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  userId         String?
+  action         String
+  target         String?
+  metadata       Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+  user           User?    @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
+}

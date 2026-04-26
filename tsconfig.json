@@ -4,8 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
-    "outDir": "dist",
-    "rootDir": "src",
+    "outDir": "apps/backend/dist",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
@@ -13,7 +13,23 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "sourceMap": true,
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@crawlix/database": ["packages/database/src/index.ts"],
+      "@crawlix/shared": ["packages/shared/src/index.ts"],
+      "@crawlix/providers": ["packages/providers/src/index.ts"],
+      "@crawlix/scoring": ["packages/scoring/src/index.ts"],
+      "@crawlix/db": ["packages/db/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "apps/backend/src/**/*.ts",
+    "apps/worker/src/**/*.ts",
+    "packages/database/src/**/*.ts",
+    "packages/shared/src/**/*.ts",
+    "packages/providers/src/**/*.ts",
+    "packages/scoring/src/**/*.ts",
+    "packages/db/src/**/*.ts"
+  ]
 }

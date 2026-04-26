@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crawlix</title>
+    <link rel="stylesheet" href="/styles/main.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Crawlix <small>— pluggable scraping engine</small></h1>
+    </header>
+    <main>
+      <section class="card">
+        <h3 style="margin-top: 0">New job</h3>
+        <label for="adapter">Adapter</label>
+        <select id="adapter"></select>
+        <label for="input">Input (JSON)</label>
+        <textarea id="input" spellcheck="false"></textarea>
+        <button id="submit">Run</button>
+        <p id="error" class="error-msg"></p>
+      </section>
+      <section class="card">
+        <div class="row">
+          <h3 style="margin: 0">Jobs</h3>
+          <button id="refresh" class="btn-secondary">Refresh</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Adapter</th>
+              <th>Status</th>
+              <th>Items</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="jobs"></tbody>
+        </table>
+        <pre id="detail"></pre>
+      </section>
+    </main>
+    <script src="/scripts/app.js"></script>
+  </body>
+</html>

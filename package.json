@@ -2,23 +2,29 @@
   "name": "crawlix",
   "version": "0.1.0",
   "private": true,
-  "description": "Crawlix — a pluggable scraping platform (Outscraper-style) built on Node.js + Playwright.",
+  "description": "Crawlix — local business lead intelligence SaaS platform.",
   "type": "module",
-  "bin": {
-    "crawlix": "./dist/cli.js"
-  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
-    "build": "tsc -p tsconfig.json",
-    "cli": "tsx src/cli.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\"",
-    "postinstall": "playwright install chromium || true"
+    "legacy:dev": "tsx watch apps/backend/src/server.ts",
+    "legacy:cli": "tsx apps/backend/src/cli.ts",
+    "web:dev": "npm run dev --workspace @crawlix/web",
+    "web:build": "npm run build --workspace @crawlix/web",
+    "worker:dev": "npm run dev --workspace @crawlix/worker",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @crawlix/web && npm run typecheck --workspace @crawlix/worker",
+    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\"",
+    "db:generate": "npm run prisma:generate --workspace @crawlix/db",
+    "db:migrate": "npm run prisma:migrate --workspace @crawlix/db",
+    "db:deploy": "npm run prisma:deploy --workspace @crawlix/db",
+    "db:studio": "npm run prisma:studio --workspace @crawlix/db"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
     "@fastify/static": "^7.0.4",
+    "@supabase/supabase-js": "^2.45.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",

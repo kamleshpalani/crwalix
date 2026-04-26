@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@crawlix/shared": ["../../packages/shared/src/index.ts"],
+      "@crawlix/providers": ["../../packages/providers/src/index.ts"],
+      "@crawlix/scoring": ["../../packages/scoring/src/index.ts"],
+      "@crawlix/db": ["../../packages/db/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
