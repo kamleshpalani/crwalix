@@ -5,6 +5,7 @@ import { Badge, priorityTone, websiteTone } from '@/components/Badge';
 import { Pagination } from '@/components/Pagination';
 import { leadsService } from '@/server/services/leads.service';
 import { parseLeadFilter, buildBaseHref } from '@/lib/filters';
+import { getPriorityRecommendation } from '@crawlix/shared';
 import LeadFilters from './LeadFilters';
 import LeadsBulkActions from './LeadsBulkActions';
 
@@ -50,6 +51,7 @@ export default async function LeadsPage({
         )}
         {items.map((l) => {
           const score = l.score ?? l.scores[0]?.score ?? null;
+          const rec = getPriorityRecommendation(l.priorityTier);
           return (
             <li key={l.id} className="p-4 hover:bg-white/70">
               <div className="flex items-start gap-3">
@@ -70,9 +72,7 @@ export default async function LeadsPage({
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {l.priorityTier && (
-                          <Badge tone={priorityTone(l.priorityTier)}>
-                            {l.priorityTier}
-                          </Badge>
+                          <Badge tone={priorityTone(l.priorityTier)}>{rec.label}</Badge>
                         )}
                         <Badge tone={websiteTone(l.websiteStatus)}>
                           {l.websiteStatus.replaceAll('_', ' ').toLowerCase()}
@@ -86,6 +86,9 @@ export default async function LeadsPage({
                             {l.reviewCount ? ` (${l.reviewCount})` : ''}
                           </span>
                         )}
+                      </div>
+                      <div className="mt-1 text-xs italic text-ink-600">
+                        Recommended action: {rec.action}
                       </div>
                     </div>
                     {score !== null && (

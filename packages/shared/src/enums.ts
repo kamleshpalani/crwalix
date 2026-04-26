@@ -131,3 +131,27 @@ export const BusinessStatus = {
   UNKNOWN: 'UNKNOWN',
 } as const;
 export type BusinessStatus = (typeof BusinessStatus)[keyof typeof BusinessStatus];
+
+/**
+ * Human-readable priority label + recommended sales action derived from a
+ * lead's PriorityTier. Used in the UI (lead list / detail) and exports.
+ */
+export interface PriorityRecommendation {
+  label: 'No Website' | 'Website Needs Improvement' | 'Proper Website' | 'Unscored';
+  action: string;
+}
+
+export function getPriorityRecommendation(
+  tier: PriorityTier | string | null | undefined
+): PriorityRecommendation {
+  switch (tier) {
+    case PriorityTier.HIGH:
+      return { label: 'No Website', action: 'Pitch new website package' };
+    case PriorityTier.MEDIUM:
+      return { label: 'Website Needs Improvement', action: 'Pitch redesign / modernization' };
+    case PriorityTier.LOW:
+      return { label: 'Proper Website', action: 'Low priority — nurture later' };
+    default:
+      return { label: 'Unscored', action: 'Awaiting score' };
+  }
+}

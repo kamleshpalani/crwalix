@@ -15,6 +15,12 @@ import { getConnection } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { normalizedName } from './normalize';
 import { resolveSearchProvider } from '../providers/index';
+import {
+  buildMergeData,
+  digitsOnly,
+  findDuplicateLead,
+  normalizeAddress
+} from './dedupe';
 
 let _scoringQueue: Queue | null = null;
 function scoringQueue(): Queue {
@@ -100,6 +106,11 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
             insertedLeadIds.push(inserted.lead.id);
           } else {
             totalDuplicate++;
+            if (inserted.merged) {
+              // Cross-provider merge: rescore so the lead picks up any new
+              // signals (additional categories, better phone/website, etc.).
+              insertedLeadIds.push(inserted.lead.id);
+            }
           }
           await tx.leadSource.create({
             data: {
@@ -225,6 +236,7 @@ async function upsertLead(
   organizationId: string,
   r: NormalizedLead
 ) {
+  // 1. Exact same provider + externalPlaceId → straight update.
   const existing = await tx.lead.findUnique({
     where: {
       organizationId_provider_externalPlaceId: {
@@ -246,9 +258,24 @@ async function upsertLead(
         businessStatus: r.businessStatus
       }
     });
-    return { lead, created: false };
+    return { lead, created: false, merged: false };
   }
 
+  // 2. Cross-provider deduplication: same business from a different
+  //    provider already lives in the org's leads → merge into it.
+  const match = await findDuplicateLead(tx, organizationId, r);
+  if (match) {
+    const target = await tx.lead.findUnique({ where: { id: match.leadId } });
+    if (target) {
+      const merged = await tx.lead.update({
+        where: { id: target.id },
+        data: buildMergeData(target, r)
+      });
+      return { lead: merged, created: false, merged: true };
+    }
+  }
+
+  // 3. Brand-new lead → insert.
   const lead = await tx.lead.create({
     data: {
       organizationId,
@@ -259,12 +286,12 @@ async function upsertLead(
       categoryPrimary: r.categoryPrimary,
       categories: r.categories,
       phone: r.phone,
-      phoneNormalized: r.phone,
+      phoneNormalized: digitsOnly(r.phone) || null,
       website: r.website,
       websiteStatus: r.website ? WebsiteStatus.EXISTS : WebsiteStatus.UNKNOWN,
       sourceUrl: r.sourceUrl,
       address: r.address,
-      addressNormalized: r.address?.toLowerCase(),
+      addressNormalized: normalizeAddress(r.address),
       city: r.city,
       state: r.state,
       country: r.country,
@@ -278,5 +305,5 @@ async function upsertLead(
       normalizedPayload: r as unknown as Prisma.InputJsonValue
     }
   });
-  return { lead, created: true };
+  return { lead, created: true, merged: false };
 }

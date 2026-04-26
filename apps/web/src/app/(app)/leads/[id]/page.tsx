@@ -10,6 +10,7 @@ import {
   websiteHealthTone
 } from '@/components/Badge';
 import { leadsService } from '@/server/services/leads.service';
+import { getPriorityRecommendation } from '@crawlix/shared';
 import LeadStatusControl from './LeadStatusControl';
 import LeadNotes from './LeadNotes';
 import LeadTags from './LeadTags';
@@ -45,7 +46,9 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {lead.priorityTier && (
-                <Badge tone={priorityTone(lead.priorityTier)}>{lead.priorityTier}</Badge>
+                <Badge tone={priorityTone(lead.priorityTier)}>
+                  {getPriorityRecommendation(lead.priorityTier).label}
+                </Badge>
               )}
               <Badge tone={websiteTone(lead.websiteStatus)}>
                 {lead.websiteStatus.replaceAll('_', ' ').toLowerCase()}
@@ -53,6 +56,12 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
               <Badge tone={statusTone(lead.status)}>{lead.status}</Badge>
               <Badge tone="slate">via {lead.provider}</Badge>
             </div>
+            {lead.priorityTier && (
+              <p className="mt-2 text-sm text-ink-700">
+                <span className="font-medium">Recommended action:</span>{' '}
+                {getPriorityRecommendation(lead.priorityTier).action}
+              </p>
+            )}
             <div className="mt-3">
               <LeadStatusControl leadId={lead.id} current={lead.status} />
             </div>
