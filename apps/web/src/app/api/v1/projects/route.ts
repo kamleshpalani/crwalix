@@ -4,14 +4,16 @@ import { projectsService, CreateProjectSchema } from '@/server/services/projects
 
 export async function GET() {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  if (isResponse(ctx)) return ctx;
+  if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const items = await projectsService.list(ctx.orgId);
   return NextResponse.json({ items });
 }
 
 export async function POST(req: Request) {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  if (isResponse(ctx)) return ctx;
+  if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const parsed = CreateProjectSchema.safeParse(body);
   if (!parsed.success) {

@@ -3,6 +3,7 @@ import {
   BusinessStatus,
   EnrichmentKind,
   ExportFormat,
+  LeadStatus,
   PriorityTier,
   WebsiteStatus,
 } from './enums';
@@ -82,11 +83,15 @@ export const LeadFilterSchema = z.object({
   priorityTier: z
     .union([z.nativeEnum(PriorityTier), z.array(z.nativeEnum(PriorityTier))])
     .optional(),
+  status: z
+    .union([z.nativeEnum(LeadStatus), z.array(z.nativeEnum(LeadStatus))])
+    .optional(),
   city: z.string().optional(),
   state: z.string().optional(),
   country: z.string().optional(),
   minScore: z.number().int().min(0).max(100).optional(),
   search: z.string().optional(),
+  tag: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(200).default(50),
   sort: z

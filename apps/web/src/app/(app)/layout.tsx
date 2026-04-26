@@ -1,34 +1,74 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 import HeaderUser from '@/components/HeaderUser';
 import HeaderOrg from '@/components/HeaderOrg';
+import Sidebar from '@/components/Sidebar';
+import AuroraBackground from '@/components/AuroraBackground';
+import PageTransition from '@/components/PageTransition';
 
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-        <nav className="flex items-center gap-6 text-sm">
-          <Link href="/dashboard" className="font-semibold text-slate-900">Crawlix</Link>
-          <Link href="/projects" className="text-slate-600 hover:text-slate-900">Projects</Link>
-          <Link href="/searches" className="text-slate-600 hover:text-slate-900">Searches</Link>
-          <Link href="/leads" className="text-slate-600 hover:text-slate-900">Leads</Link>
-          <Link href="/exports" className="text-slate-600 hover:text-slate-900">Exports</Link>
-          <Link href="/settings/billing" className="text-slate-600 hover:text-slate-900">Billing</Link>
-        </nav>
-        {hasClerk ? (
-          <div className="flex items-center gap-3">
-            <HeaderOrg />
-            <HeaderUser />
-          </div>
-        ) : (
-          <span className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-800">
-            Clerk keys not configured
-          </span>
-        )}
-      </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+    <div className="relative min-h-screen">
+      <AuroraBackground />
+
+      <div className="mx-auto flex w-full max-w-[1440px] gap-4 px-4 py-4 lg:px-6">
+        <Sidebar />
+
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <header className="glass sticky top-4 z-30 flex items-center justify-between gap-3 px-4 py-2.5">
+            <div className="flex items-center gap-2 lg:hidden">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-brand text-white shadow-glow">
+                <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+                  <path
+                    d="M4 7l8-4 8 4-8 4-8-4zm0 5l8 4 8-4M4 17l8 4 8-4"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <span className="text-sm font-semibold">Crawlix</span>
+            </div>
+            <div className="hidden flex-1 items-center gap-2 lg:flex">
+              <div className="relative w-full max-w-md">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400"
+                >
+                  <path
+                    d="M21 21l-4.3-4.3M11 18a7 7 0 110-14 7 7 0 010 14z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <input
+                  type="search"
+                  placeholder="Search leads, projects, searches…"
+                  className="w-full pl-9 text-sm"
+                />
+              </div>
+            </div>
+            {hasClerk ? (
+              <div className="flex items-center gap-2">
+                <HeaderOrg />
+                <HeaderUser />
+              </div>
+            ) : (
+              <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs text-amber-800">
+                Clerk keys not configured
+              </span>
+            )}
+          </header>
+
+          <main className="min-h-[calc(100vh-7rem)] pb-12">
+            <PageTransition>{children}</PageTransition>
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

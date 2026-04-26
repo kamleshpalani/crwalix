@@ -13,6 +13,7 @@ import { getConnection } from './lib/redis';
 import { logger } from './lib/logger';
 import { runSearchIngest } from './pipelines/search-ingest';
 import { runScoreLead } from './pipelines/score-lead';
+import { googleCacheCleanup } from './pipelines/compliance-cleanup';
 
 const connection = getConnection();
 
@@ -60,5 +61,14 @@ async function shutdown(sig: string): Promise<void> {
 }
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+// Google Maps Platform ToS: cached Place data must not be retained longer
+// than 30 days. Run cleanup on boot and every 6 hours thereafter.
+void googleCacheCleanup();
+const complianceTimer = setInterval(
+  () => void googleCacheCleanup(),
+  6 * 60 * 60 * 1000
+);
+complianceTimer.unref();
 
 logger.info('crawlix worker started');

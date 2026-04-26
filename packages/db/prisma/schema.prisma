@@ -253,6 +253,8 @@ model Lead {
   priorityTier      PriorityTier?
   scoreBreakdown    Json?
   status            LeadStatus     @default(NEW)
+  notes             String?
+  tags              String[]       @default([])
   firstSeenAt       DateTime       @default(now())
   lastSeenAt        DateTime       @default(now())
   lastEnrichedAt    DateTime?

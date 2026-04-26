@@ -10,8 +10,17 @@ export async function withOrg<T>(
   organizationId: string,
   fn: (tx: Prisma.TransactionClient) => Promise<T>
 ): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SELECT set_config('app.current_org', $1, true)`, organizationId);
-    return fn(tx);
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_org', $1, true)`, organizationId);
+      return fn(tx);
+    },
+    {
+      // Search-ingest batches can write 100+ leads per transaction; bump the
+      // default 5s timeout so large pages don't fail with "Transaction not
+      // found / refers to an old closed transaction".
+      maxWait: 10_000,
+      timeout: 120_000
+    }
+  );
 }

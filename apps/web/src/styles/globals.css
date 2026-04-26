@@ -3,9 +3,113 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  --tw-ring-color: rgba(47, 108, 255, 0.35);
 }
 
+html,
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-ink-50 text-ink-900 antialiased;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  letter-spacing: -0.01em;
+}
+
+/* Aurora gradient background painted on a fixed layer behind everything. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--app-bg, none);
+  pointer-events: none;
+}
+
+@layer components {
+  /* Reusable glass surface. */
+  .glass {
+    @apply rounded-2xl border border-white/60 bg-white/65 shadow-glass backdrop-blur-xl;
+  }
+  .glass-lg {
+    @apply rounded-3xl border border-white/60 bg-white/70 shadow-glass-lg backdrop-blur-2xl;
+  }
+  .glass-soft {
+    @apply rounded-xl border border-white/50 bg-white/55 backdrop-blur-md;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn text-white shadow-glow;
+    background-image: linear-gradient(135deg, #2f6cff 0%, #7a5cff 100%);
+  }
+  .btn-primary:hover { filter: brightness(1.05); }
+  .btn-ghost {
+    @apply btn border border-white/60 bg-white/60 text-ink-800 hover:bg-white/80 backdrop-blur;
+  }
+  .btn-danger {
+    @apply btn border border-rose-200/70 bg-rose-50/70 text-rose-700 hover:bg-rose-100/80 backdrop-blur;
+  }
+
+  /* Inputs */
+  .input,
+  .form-input,
+  .form-select,
+  .form-textarea,
+  .form-multiselect,
+  textarea,
+  select,
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='search'],
+  input[type='number'],
+  input[type='url'],
+  input[type='tel'],
+  input[type='date'] {
+    @apply rounded-xl border-white/60 bg-white/70 text-ink-900 shadow-sm backdrop-blur placeholder:text-ink-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-200;
+  }
+
+  .label {
+    @apply text-xs font-medium uppercase tracking-wider text-ink-500;
+  }
+
+  /* Subtle shimmer for skeletons */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0.9) 50%,
+      rgba(255, 255, 255, 0.4) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-md;
+  }
+
+  /* Sidebar nav links */
+  .nav-link {
+    @apply flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-ink-600 transition hover:bg-white/70 hover:text-ink-900;
+  }
+  .nav-link-active {
+    @apply bg-white/80 text-ink-900 shadow-glass;
+  }
+
+  /* Decorative gradient orbs for backgrounds. */
+  .orb {
+    @apply pointer-events-none absolute rounded-full blur-3xl opacity-60;
+  }
+}
+
+/* Scrollbar polish (WebKit only — graceful on others). */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
 }

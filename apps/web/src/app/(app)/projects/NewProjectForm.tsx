@@ -28,10 +28,10 @@ export default function NewProjectForm() {
               else setError(res.error);
             });
           }}
-          className="rounded-md border border-slate-200 bg-white p-4 space-y-3"
+          className="glass p-4 space-y-3"
         >
           <div>
-            <label className="block text-xs font-medium text-slate-700">Name</label>
+            <label className="block text-xs font-medium text-ink-700">Name</label>
             <input
               name="name"
               required
@@ -42,7 +42,7 @@ export default function NewProjectForm() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Description</label>
+            <label className="block text-xs font-medium text-ink-700">Description</label>
             <textarea
               name="description"
               maxLength={500}
@@ -66,7 +66,7 @@ export default function NewProjectForm() {
                 setOpen(false);
                 setError(null);
               }}
-              className="rounded-md px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
+              className="rounded-md px-4 py-2 text-sm text-ink-600 hover:text-ink-900"
             >
               Cancel
             </button>

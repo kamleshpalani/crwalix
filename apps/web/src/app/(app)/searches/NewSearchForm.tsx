@@ -5,7 +5,13 @@ import { createSearchAction } from './actions';
 
 type Project = { id: string; name: string };
 
-export default function NewSearchForm({ projects }: { projects: Project[] }) {
+export default function NewSearchForm({
+  projects,
+  defaultProjectId
+}: {
+  projects: Project[];
+  defaultProjectId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'err' | 'ok'; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -45,13 +51,14 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
               }
             });
           }}
-          className="rounded-md border border-slate-200 bg-white p-4 grid grid-cols-2 gap-3"
+          className="glass p-4 grid grid-cols-2 gap-3"
         >
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-slate-700">Project</label>
+            <label className="block text-xs font-medium text-ink-700">Project</label>
             <select
               name="projectId"
               required
+              defaultValue={defaultProjectId ?? projects[0]?.id}
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             >
               {projects.map((p) => (
@@ -62,7 +69,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             </select>
           </div>
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-slate-700">Name</label>
+            <label className="block text-xs font-medium text-ink-700">Name</label>
             <input
               name="name"
               required
@@ -71,7 +78,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-slate-700">Keyword / Search query</label>
+            <label className="block text-xs font-medium text-ink-700">Keyword / Search query</label>
             <input
               name="keyword"
               required
@@ -80,7 +87,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">City (optional)</label>
+            <label className="block text-xs font-medium text-ink-700">City (optional)</label>
             <input
               name="city"
               placeholder="Austin"
@@ -88,7 +95,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Country (ISO-2)</label>
+            <label className="block text-xs font-medium text-ink-700">Country (ISO-2)</label>
             <input
               name="country"
               maxLength={2}
@@ -97,7 +104,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Result limit</label>
+            <label className="block text-xs font-medium text-ink-700">Result limit</label>
             <input
               name="resultLimit"
               type="number"
@@ -108,7 +115,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Provider</label>
+            <label className="block text-xs font-medium text-ink-700">Provider</label>
             <select
               name="provider"
               defaultValue="google_places"
@@ -135,7 +142,7 @@ export default function NewSearchForm({ projects }: { projects: Project[] }) {
                 setOpen(false);
                 setMsg(null);
               }}
-              className="rounded-md px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
+              className="rounded-md px-4 py-2 text-sm text-ink-600 hover:text-ink-900"
             >
               Cancel
             </button>

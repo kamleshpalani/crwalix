@@ -5,7 +5,8 @@ import { leadsService } from '@/server/services/leads.service';
 
 export async function GET(req: Request) {
   const ctx = await requireOrg();
-  if (isResponse(ctx)) return ctx; if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 }); if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  if (isResponse(ctx)) return ctx;
+  if (isAuthError(ctx)) return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   const url = new URL(req.url);
   const raw = Object.fromEntries(url.searchParams.entries());
   const parsed = LeadFilterSchema.safeParse(raw);
