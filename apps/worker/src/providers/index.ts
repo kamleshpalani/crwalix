@@ -1,18 +1,16 @@
 import {
   registerSearchProvider,
   getSearchProvider,
-  googlePlacesProvider,
-  yelpFusionProvider,
-  osmOverpassProvider,
+  ALL_LEAD_PROVIDERS,
   type SearchProvider
 } from '@crawlix/providers';
 
 let bootstrapped = false;
 function bootstrap(): void {
   if (bootstrapped) return;
-  registerSearchProvider(googlePlacesProvider);
-  registerSearchProvider(yelpFusionProvider);
-  registerSearchProvider(osmOverpassProvider);
+  for (const p of ALL_LEAD_PROVIDERS) {
+    registerSearchProvider(p);
+  }
   bootstrapped = true;
 }
 
