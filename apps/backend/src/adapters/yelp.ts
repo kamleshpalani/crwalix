@@ -18,12 +18,28 @@ export interface YelpBusiness {
   address?: string;
 }
 
+/**
+ * ⚠️ DEPRECATED — DO NOT USE IN PRODUCTION.
+ *
+ * This adapter scrapes yelp.com via a headless browser, which violates the
+ * Yelp Fusion Terms of Use. It is kept as historical reference. The
+ * supported, compliant path is the `yelpProvider` in
+ * `packages/providers/src/leadProviders/` which uses the official Yelp
+ * Fusion API.
+ *
+ * Calling `run()` will throw at runtime to prevent accidental use.
+ */
 export const yelpAdapter: Adapter<z.infer<typeof Input>, { businesses: YelpBusiness[] }> = {
   name: 'yelp',
-  description: 'Search Yelp for businesses. NOTE: selectors may need updates when Yelp changes markup.',
+  description: 'DEPRECATED: legacy browser-scrape adapter. Use the official Yelp Fusion API provider instead.',
   inputSchema: Input,
 
   async run(input, { page, signal, onProgress }) {
+    if (process.env.CRAWLIX_ALLOW_LEGACY_SCRAPERS !== '1') {
+      throw new Error(
+        'yelp scraper is disabled for ToS compliance. Use the Yelp Fusion API provider instead.'
+      );
+    }
     if (signal.aborted) throw new Error('Canceled');
     const url = `https://www.yelp.com/search?find_desc=${encodeURIComponent(input.query)}${
       input.location ? `&find_loc=${encodeURIComponent(input.location)}` : ''

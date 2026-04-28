@@ -20,12 +20,30 @@ export interface GoogleMapsPlace {
   url?: string;
 }
 
+/**
+ * ⚠️ DEPRECATED — DO NOT USE IN PRODUCTION.
+ *
+ * This adapter scrapes google.com/maps via a headless browser, which
+ * violates the Google Maps Platform Terms of Service. It is kept only as
+ * historical reference and is wired through the legacy `apps/backend`
+ * surface (NOT deployed). The supported, compliant path is the
+ * `googlePlacesProvider` in `packages/providers/src/leadProviders/` which
+ * uses the official Places API.
+ *
+ * Calling `run()` will throw at runtime to prevent accidental use.
+ */
 export const googleMapsAdapter: Adapter<z.infer<typeof Input>, { places: GoogleMapsPlace[] }> = {
   name: 'google-maps',
-  description: 'Search Google Maps for businesses and extract name, rating, reviews, address, phone, and website.',
+  description: 'DEPRECATED: legacy browser-scrape adapter. Use the official Google Places API provider instead.',
   inputSchema: Input,
 
   async run(input, { page, logger, signal, onProgress }) {
+    if (process.env.CRAWLIX_ALLOW_LEGACY_SCRAPERS !== '1') {
+      throw new Error(
+        'google-maps scraper is disabled for ToS compliance. Use the Google Places API provider instead.'
+      );
+    }
+    logger.warn('Running deprecated google-maps browser scraper (CRAWLIX_ALLOW_LEGACY_SCRAPERS=1).');
     const q = input.location ? `${input.query} ${input.location}` : input.query;
     const url = `https://www.google.com/maps/search/${encodeURIComponent(q)}?hl=${encodeURIComponent(
       input.language

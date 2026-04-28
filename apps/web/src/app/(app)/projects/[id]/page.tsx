@@ -17,9 +17,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   const leadCount = await withOrg(ctx.orgId, (tx) =>
     tx.lead.count({
-      where: { sources: { some: { searchRun: { search: { projectId: project.id } } } } }
+      where: {
+        organizationId: ctx.orgId,
+        sources: { some: { searchRun: { search: { projectId: project.id } } } }
+      }
     })
   );
+
+  const edits = await projectsService.listEdits(ctx.orgId, project.id, 20);
 
   return (
     <div className="space-y-6">
@@ -82,6 +87,51 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="glass p-4">
+        <h2 className="text-sm font-semibold text-ink-900">Edit history ({edits.length})</h2>
+        {edits.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-500">No edits yet.</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-white/60 text-sm">
+            {edits.map((e) => {
+              const diff = (e.diff ?? {}) as Record<string, { from: unknown; to: unknown }>;
+              const fields = Object.keys(diff);
+              return (
+                <li key={e.id} className="py-2.5">
+                  <div className="text-xs text-ink-500">
+                    {e.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
+                    {e.editedByName && (
+                      <span className="ml-2">· by <span className="text-ink-700">{e.editedByName}</span></span>
+                    )}
+                    {fields.length > 0 && (
+                      <span className="ml-2">· {fields.length} field{fields.length === 1 ? '' : 's'} changed</span>
+                    )}
+                  </div>
+                  <ul className="mt-1 grid grid-cols-1 gap-0.5 text-xs md:grid-cols-2">
+                    {fields.map((f) => {
+                      const v = diff[f];
+                      const fmt = (x: unknown) => {
+                        if (x === null || x === undefined || x === '') return '∅';
+                        const s = String(x);
+                        return s.length > 40 ? s.slice(0, 40) + '…' : s;
+                      };
+                      return (
+                        <li key={f} className="font-mono text-ink-600">
+                          <span className="font-semibold text-ink-900">{f}:</span>{' '}
+                          <span className="text-rose-700">{fmt(v?.from)}</span>{' '}
+                          <span className="text-ink-400">→</span>{' '}
+                          <span className="text-emerald-700">{fmt(v?.to)}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
     </div>
   );

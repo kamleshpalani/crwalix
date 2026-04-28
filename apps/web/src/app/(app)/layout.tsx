@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { ClerkProvider } from '@clerk/nextjs';
 import HeaderUser from '@/components/HeaderUser';
 import HeaderOrg from '@/components/HeaderOrg';
+import NotificationsBell from '@/components/NotificationsBell';
 import Sidebar from '@/components/Sidebar';
 import AuroraBackground from '@/components/AuroraBackground';
 import PageTransition from '@/components/PageTransition';
@@ -8,7 +10,7 @@ import PageTransition from '@/components/PageTransition';
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  return (
+  const shell = (
     <div className="relative min-h-screen">
       <AuroraBackground />
 
@@ -55,6 +57,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {hasClerk ? (
               <div className="flex items-center gap-2">
                 <HeaderOrg />
+                <NotificationsBell />
                 <HeaderUser />
               </div>
             ) : (
@@ -67,8 +70,44 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <main className="min-h-[calc(100vh-7rem)] pb-12">
             <PageTransition>{children}</PageTransition>
           </main>
+
+          <footer className="px-2 pb-6 pt-2 text-[11px] leading-relaxed text-ink-500">
+            <p>
+              Business data sourced from{' '}
+              <a
+                href="https://developers.google.com/maps/documentation/places/web-service/policies"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline hover:text-ink-700"
+              >
+                Google Maps Platform
+              </a>
+              ,{' '}
+              <a
+                href="https://docs.developer.yelp.com/docs/fusion-api-terms-of-use"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline hover:text-ink-700"
+              >
+                Yelp Fusion
+              </a>
+              , and{' '}
+              <a
+                href="https://www.openstreetmap.org/copyright"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline hover:text-ink-700"
+              >
+                © OpenStreetMap contributors
+              </a>{' '}
+              (ODbL). Used under each provider&apos;s API terms. Crawlix is a B2B
+              lead-research tool — please honor unsubscribe requests and applicable
+              CAN-SPAM / GDPR rules in your outreach.
+            </p>
+          </footer>
         </div>
       </div>
     </div>
   );
+  return hasClerk ? <ClerkProvider>{shell}</ClerkProvider> : shell;
 }

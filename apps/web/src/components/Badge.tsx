@@ -35,12 +35,15 @@ export function Badge({
 
 export function priorityTone(tier: string | null | undefined): BadgeTone {
   switch (tier) {
+    // Spec: HIGH → red (most urgent: no website prospects).
     case 'HIGH':
-      return 'emerald';
+      return 'rose';
+    // MEDIUM → orange (needs redesign).
     case 'MEDIUM':
       return 'amber';
+    // LOW → green (already has a proper site).
     case 'LOW':
-      return 'slate';
+      return 'emerald';
     default:
       return 'slate';
   }
@@ -77,6 +80,22 @@ export function websiteTone(s: string | null | undefined): BadgeTone {
       return 'amber';
     case 'HIGH_CONFIDENCE_NONE':
       return 'rose';
+    default:
+      return 'slate';
+  }
+}
+
+export function websiteHealthTone(h: string | null | undefined): BadgeTone {
+  switch (h) {
+    case 'FRESH':
+      return 'emerald';
+    case 'NEEDS_REVIEW':
+      return 'amber';
+    case 'OUTDATED':
+      return 'rose';
+    case 'UNREACHABLE':
+      return 'rose';
+    case 'NOT_AUDITED':
     default:
       return 'slate';
   }

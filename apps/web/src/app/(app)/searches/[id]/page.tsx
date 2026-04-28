@@ -6,6 +6,7 @@ import { Badge, statusTone } from '@/components/Badge';
 import { searchesService } from '@/server/services/searches.service';
 import { withOrg } from '@crawlix/db';
 import SearchDetailControls from './SearchDetailControls';
+import SearchEditForm from './SearchEditForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,11 +20,15 @@ export default async function SearchDetailPage({ params }: { params: { id: strin
 
   const leadCount = await withOrg(ctx.orgId, (tx) =>
     tx.lead.count({
-      where: { sources: { some: { searchRun: { searchId: search.id } } } }
+      where: {
+        organizationId: ctx.orgId,
+        sources: { some: { searchRun: { searchId: search.id } } }
+      }
     })
   );
 
   const latest = search.runs[0];
+  const edits = await searchesService.listEdits(ctx.orgId, search.id, 20);
 
   return (
     <div className="space-y-6">
@@ -62,6 +67,24 @@ export default async function SearchDetailPage({ params }: { params: { id: strin
         </div>
       </div>
 
+      <SearchEditForm
+        search={{
+          id: search.id,
+          name: search.name,
+          keyword: search.keyword,
+          niche: search.niche,
+          city: search.city,
+          state: search.state,
+          country: search.country,
+          postalCode: search.postalCode,
+          radiusMeters: search.radiusMeters,
+          resultLimit: search.resultLimit,
+          leadFocus: (search as { leadFocus?: string | null }).leadFocus ?? 'ALL',
+          scheduleFrequency: (search as { scheduleFrequency?: string }).scheduleFrequency ?? 'NONE',
+          provider: search.provider
+        }}
+      />
+
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card title="Query">
           <Field label="Keyword" value={search.keyword} />
@@ -97,6 +120,42 @@ export default async function SearchDetailPage({ params }: { params: { id: strin
         </Card>
       </section>
 
+      <Card title={`Edit history (${edits.length})`}>
+        {edits.length === 0 ? (
+          <p className="text-sm text-ink-500">No edits yet.</p>
+        ) : (
+          <ul className="divide-y divide-white/60 text-sm">
+            {edits.map((e) => {
+              const diff = (e.diff ?? {}) as Record<string, { from: unknown; to: unknown }>;
+              const fields = Object.keys(diff);
+              return (
+                <li key={e.id} className="py-2.5">
+                  <div className="text-xs text-ink-500">
+                    {e.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
+                    {e.editedByName && (
+                      <span className="ml-2">· by <span className="text-ink-700">{e.editedByName}</span></span>
+                    )}
+                    {fields.length > 0 && (
+                      <span className="ml-2">· {fields.length} field{fields.length === 1 ? '' : 's'} changed</span>
+                    )}
+                  </div>
+                  <ul className="mt-1 grid grid-cols-1 gap-0.5 text-xs md:grid-cols-2">
+                    {fields.map((f) => (
+                      <li key={f} className="font-mono text-ink-600">
+                        <span className="font-semibold text-ink-900">{f}:</span>{' '}
+                        <span className="text-rose-700">{fmtVal(diff[f]?.from)}</span>{' '}
+                        <span className="text-ink-400">→</span>{' '}
+                        <span className="text-emerald-700">{fmtVal(diff[f]?.to)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
       <Card title={`Run history (${search.runs.length})`}>
         {search.runs.length === 0 ? (
           <p className="text-sm text-ink-500">No runs yet.</p>
@@ -106,6 +165,7 @@ export default async function SearchDetailPage({ params }: { params: { id: strin
               <tr className="text-xs uppercase tracking-wide text-ink-500">
                 <th className="py-2">Started</th>
                 <th>Status</th>
+                <th>Sort</th>
                 <th className="text-right">Fetched</th>
                 <th className="text-right">Inserted</th>
                 <th className="text-right">Dupes</th>
@@ -120,6 +180,14 @@ export default async function SearchDetailPage({ params }: { params: { id: strin
                   </td>
                   <td>
                     <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                  </td>
+                  <td className="text-xs text-ink-600">
+                    {(() => {
+                      const md = (r.metadata ?? {}) as { rankPreference?: string };
+                      return md.rankPreference
+                        ? md.rankPreference.replace('_', ' ')
+                        : <span className="text-ink-400">—</span>;
+                    })()}
                   </td>
                   <td className="text-right font-mono">{r.totalFetched}</td>
                   <td className="text-right font-mono">{r.totalInserted}</td>
@@ -157,4 +225,15 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       </span>
     </div>
   );
+}
+
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '∅';
+  if (typeof v === 'string') return v.length > 40 ? v.slice(0, 40) + '…' : v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }

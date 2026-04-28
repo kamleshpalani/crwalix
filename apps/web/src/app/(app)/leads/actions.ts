@@ -105,3 +105,19 @@ export async function removeLeadTagAction(
     return { ok: false, error: e instanceof Error ? e.message : 'Failed' };
   }
 }
+
+export async function auditLeadWebsiteAction(
+  leadId: string
+): Promise<SetStatusResult> {
+  const ctx = await requireOrg();
+  if (isResponse(ctx) || isAuthError(ctx))
+    return { ok: false, error: 'No active organization.' };
+  try {
+    const res = await leadsService.auditWebsite(ctx.orgId, leadId);
+    if (!res.ok) return { ok: false, error: res.reason };
+    revalidatePath(`/leads/${leadId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed' };
+  }
+}

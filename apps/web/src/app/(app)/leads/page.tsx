@@ -5,6 +5,7 @@ import { Badge, priorityTone, websiteTone } from '@/components/Badge';
 import { Pagination } from '@/components/Pagination';
 import { leadsService } from '@/server/services/leads.service';
 import { parseLeadFilter, buildBaseHref } from '@/lib/filters';
+import { getPriorityRecommendation, SERVICE_PITCH_LABELS, BUSINESS_SCALE_LABELS, type ServicePitch, type BusinessScale } from '@crawlix/shared';
 import LeadFilters from './LeadFilters';
 import LeadsBulkActions from './LeadsBulkActions';
 
@@ -50,6 +51,7 @@ export default async function LeadsPage({
         )}
         {items.map((l) => {
           const score = l.score ?? l.scores[0]?.score ?? null;
+          const rec = getPriorityRecommendation(l.priorityTier);
           return (
             <li key={l.id} className="p-4 hover:bg-white/70">
               <div className="flex items-start gap-3">
@@ -69,14 +71,35 @@ export default async function LeadsPage({
                           .join(' · ')}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {(() => {
+                          const ageMs = Date.now() - new Date(l.createdAt).getTime();
+                          if (ageMs < 7 * 24 * 60 * 60 * 1000) {
+                            return <Badge tone="emerald">NEW</Badge>;
+                          }
+                          return null;
+                        })()}
                         {l.priorityTier && (
-                          <Badge tone={priorityTone(l.priorityTier)}>
-                            {l.priorityTier}
-                          </Badge>
+                          <Badge tone={priorityTone(l.priorityTier)}>{rec.label}</Badge>
                         )}
                         <Badge tone={websiteTone(l.websiteStatus)}>
                           {l.websiteStatus.replaceAll('_', ' ').toLowerCase()}
                         </Badge>
+                        {(() => {
+                          const scale = (l as unknown as { businessScale?: string })
+                            .businessScale;
+                          if (!scale || scale === 'UNKNOWN') return null;
+                          const tone =
+                            scale === 'LARGE'
+                              ? 'violet'
+                              : scale === 'MID_MARKET'
+                                ? 'amber'
+                                : 'emerald';
+                          return (
+                            <Badge tone={tone}>
+                              {BUSINESS_SCALE_LABELS[scale as BusinessScale] ?? scale}
+                            </Badge>
+                          );
+                        })()}
                         {l.phone && (
                           <span className="text-xs text-ink-500">{l.phone}</span>
                         )}
@@ -87,6 +110,21 @@ export default async function LeadsPage({
                           </span>
                         )}
                       </div>
+                      <div className="mt-1 text-xs italic text-ink-600">
+                        Recommended action: {rec.action}
+                      </div>
+                      {Array.isArray((l as unknown as { servicePitch?: string[] }).servicePitch) && (l as unknown as { servicePitch: string[] }).servicePitch.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {(l as unknown as { servicePitch: string[] }).servicePitch.map((p) => (
+                            <span
+                              key={p}
+                              className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand"
+                            >
+                              {SERVICE_PITCH_LABELS[p as ServicePitch] ?? p}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {score !== null && (
                       <Badge

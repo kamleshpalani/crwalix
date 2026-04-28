@@ -2,14 +2,8 @@
 
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { LEAD_STATUS_LIFECYCLE, LEAD_STATUS_LABELS, type LeadStatus } from '@crawlix/shared';
 import { setLeadStatusAction } from '../actions';
-
-const STATUSES: Array<{ value: 'NEW' | 'REVIEWED' | 'EXPORTED' | 'ARCHIVED'; label: string }> = [
-  { value: 'NEW', label: 'New' },
-  { value: 'REVIEWED', label: 'Reviewed' },
-  { value: 'EXPORTED', label: 'Exported' },
-  { value: 'ARCHIVED', label: 'Archived' }
-];
 
 export default function LeadStatusControl({
   leadId,
@@ -21,7 +15,7 @@ export default function LeadStatusControl({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  function set(value: 'NEW' | 'REVIEWED' | 'EXPORTED' | 'ARCHIVED') {
+  function set(value: LeadStatus) {
     if (value === current) return;
     startTransition(async () => {
       const res = await setLeadStatusAction(leadId, value);
@@ -30,21 +24,21 @@ export default function LeadStatusControl({
   }
 
   return (
-    <div className="inline-flex glass p-0.5 text-xs">
-      {STATUSES.map((s) => (
+    <div className="inline-flex flex-wrap glass p-0.5 text-xs">
+      {LEAD_STATUS_LIFECYCLE.map((s) => (
         <button
-          key={s.value}
+          key={s}
           type="button"
-          disabled={pending || current === s.value}
-          onClick={() => set(s.value)}
+          disabled={pending || current === s}
+          onClick={() => set(s)}
           className={
             'rounded px-2.5 py-1 transition ' +
-            (current === s.value
+            (current === s
               ? 'bg-slate-900 text-white'
               : 'text-ink-600 hover:bg-slate-100 disabled:opacity-50')
           }
         >
-          {s.label}
+          {LEAD_STATUS_LABELS[s] ?? s}
         </button>
       ))}
     </div>

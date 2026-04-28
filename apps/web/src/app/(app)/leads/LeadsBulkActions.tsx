@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { LEAD_STATUS_LIFECYCLE, LEAD_STATUS_LABELS, type LeadStatus } from '@crawlix/shared';
 import { setLeadStatusBulkAction } from './actions';
 
-const STATUSES = ['NEW', 'REVIEWED', 'EXPORTED', 'ARCHIVED'] as const;
-type Status = (typeof STATUSES)[number];
+const STATUSES = LEAD_STATUS_LIFECYCLE;
+type Status = LeadStatus;
 
 export default function LeadsBulkActions({ ids }: { ids: string[] }) {
   const router = useRouter();
@@ -77,7 +78,7 @@ export default function LeadsBulkActions({ ids }: { ids: string[] }) {
             onClick={() => apply(s)}
             className="rounded border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-white/70 disabled:opacity-40"
           >
-            Mark {s}
+            Mark {LEAD_STATUS_LABELS[s] ?? s}
           </button>
         ))}
       </div>

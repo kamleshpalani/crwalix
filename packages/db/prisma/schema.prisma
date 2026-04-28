@@ -32,6 +32,15 @@ enum Plan {
 
 enum LeadStatus {
   NEW
+  VERIFIED
+  CONTACTED
+  INTERESTED
+  FOLLOW_UP
+  NOT_INTERESTED
+  CONVERTED
+  CLOSED
+  // Deprecated values, retained for backwards compatibility with rows
+  // created before the lifecycle was redesigned. Treat as legacy.
   ENRICHED
   REVIEWED
   EXPORTED
@@ -116,6 +125,11 @@ model Organization {
   name             String
   plan             Plan     @default(FREE)
   stripeCustomerId String?  @unique
+  /// Optional outbound webhook fired when newly-discovered leads arrive
+  /// from a scheduled search. Slack-compatible incoming webhooks work too.
+  notificationWebhookUrl String?
+  /// Optional digest email recipient. Defaults to the org owner if blank.
+  notificationEmail      String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   members          OrganizationMember[]
@@ -124,6 +138,9 @@ model Organization {
   usageLogs        UsageLog[]
   apiKeys          ApiKey[]
   providerConfigs  ProviderConfig[]
+  outreachSettings OutreachSettings?
+  outreachSuppressions OutreachSuppression[]
+  notifications    Notification[]
 }
 
 model OrganizationMember {
@@ -194,6 +211,14 @@ model Search {
   radiusMeters   Int?
   resultLimit    Int      @default(100)
   provider       String
+  /// Per-search ingest filter: ALL | NO_WEBSITE | HIGH_OR_MED.
+  leadFocus      String   @default("ALL")
+  /// Recurring schedule. NULL or 'NONE' = one-shot. Allowed: NONE | DAILY | WEEKLY | MONTHLY.
+  scheduleFrequency String  @default("NONE")
+  /// When the next scheduled run should fire (UTC). Null when one-shot.
+  nextRunAt         DateTime?
+  /// Last time a run was kicked off for this search.
+  lastRunAt         DateTime?
   createdById    String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -201,6 +226,7 @@ model Search {
   runs           SearchRun[]
 
   @@index([organizationId, projectId])
+  @@index([scheduleFrequency, nextRunAt])
 }
 
 model SearchRun {
@@ -235,8 +261,25 @@ model Lead {
   categories        String[] @default([])
   phone             String?
   phoneNormalized   String?
+  email             String?
+  emailNormalized   String?
+  ownerName         String?
+  facebookUrl       String?
+  instagramUrl      String?
+  googleProfileUrl  String?
+  /// Recommended sales pitches derived from website audit + priority.
+  /// Values: NEW_WEBSITE | REDESIGN | SEO | BOOKING_SYSTEM | CONTACT_FORM | MOBILE_REDESIGN.
+  servicePitch      String[]       @default([])
   website           String?
   websiteStatus     WebsiteStatus  @default(UNKNOWN)
+  /// Outcome of latest website-validation enrichment.
+  /// One of WebsiteHealth (FRESH | NEEDS_REVIEW | OUTDATED | UNREACHABLE | NOT_AUDITED).
+  websiteHealth     String         @default("NOT_AUDITED")
+  /// 0–100 health score. 100 = pristine modern site, 0 = unreachable.
+  websiteHealthScore Int?
+  /// Structured findings (issues + signals) from the auditor.
+  websiteAudit      Json?
+  websiteAuditedAt  DateTime?
   sourceUrl         String?
   address           String?
   addressNormalized String?
@@ -252,6 +295,13 @@ model Lead {
   score             Int?
   priorityTier      PriorityTier?
   scoreBreakdown    Json?
+  /// Business-scale classification (SME | MID_MARKET | LARGE | UNKNOWN).
+  /// Derived from public signals (categories, reviews, website tech, etc.).
+  businessScale     String         @default("UNKNOWN")
+  /// 0–100 confidence in the classification.
+  businessScaleConfidence Int?
+  /// Contributing signals + raw bucket scores from the classifier.
+  businessScaleSignals Json?
   status            LeadStatus     @default(NEW)
   notes             String?
   tags              String[]       @default([])
@@ -386,19 +436,163 @@ model BackgroundJob {
 }
 
 model ProviderConfig {
-  id              String   @id @default(uuid())
-  organizationId  String
-  provider        String
-  enabled         Boolean  @default(true)
-  apiKeyEncrypted String?
-  dailyBudget     Int?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(uuid())
+  organizationId      String
+  provider            String
+  enabled             Boolean  @default(true)
+  apiKeyEncrypted     String?
+  dailyBudget         Int?
+  metadata            Json?
+  termsAcceptedAt     DateTime?
+  termsAcceptedBy     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, provider])
 }
+
+/// Per-organization outreach compliance settings. Required by CAN-SPAM
+/// (truthful sender identity, physical mailing address, opt-out) and GDPR
+/// Art. 14 (disclose data source on first contact). Outreach send paths
+/// MUST refuse to dispatch if these are missing.
+model OutreachSettings {
+  id                   String   @id @default(uuid())
+  organizationId       String   @unique
+  senderName           String?
+  senderCompany        String?
+  senderEmail          String?
+  replyToEmail         String?
+  mailingAddress       String?
+  unsubscribeUrl       String?
+  citeProviderInBody   Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+/// Outreach suppression list. Once an address lands here it must never
+/// receive further marketing email from this org. We hash the email so the
+/// suppression list itself doesn't leak a raw PII corpus.
+model OutreachSuppression {
+  id             String   @id @default(uuid())
+  organizationId String
+  emailHash      String
+  reason         String   @default("UNSUBSCRIBE")
+  source         String?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, emailHash])
+  @@index([organizationId, createdAt])
+}
+
+/// In-app notification feed. Currently only `LEADS_DISCOVERED` is emitted —
+/// fired by the worker after a scheduled search inserts new leads. Webhook
+/// + email digest delivery are layered on top of these rows.
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// LEADS_DISCOVERED | SEARCH_FAILED | (future)
+  kind           String
+  title          String
+  body           String
+  /// Optional deep-link path within the app, e.g. /leads?discoveredWithin=24h
+  href           String?
+  /// Free-form structured payload for the row (lead ids, counts, etc.).
+  data           Json?
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, readAt, createdAt])
+  @@index([organizationId, kind, createdAt])
+}
+
+/// Audit log of edits made to a Search. One row per save, with a structured
+/// diff of changed fields (`{ field: { from, to } }`).
+model SearchEdit {
+  id             String   @id @default(uuid())
+  organizationId String
+  searchId       String
+  /// Internal Crawlix User.id of the editor. Nullable for system edits.
+  editedById     String?
+  /// Diff payload: { fieldName: { from: any, to: any } }
+  diff           Json
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, searchId, createdAt])
+}
+
+/// Audit log of edits made to a Project. Same shape as SearchEdit.
+model ProjectEdit {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  editedById     String?
+  diff           Json
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, projectId, createdAt])
+}
+
+/// Website Intelligence & Competitor Analysis report. One report covers a
+/// primary business URL plus N competitor URLs. Audits are stored as JSON
+/// (reusing the WebsiteAuditResult shape from the worker pipeline). Generated
+/// asynchronously by the `intel.build` job.
+model WebsiteIntelReport {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Optional link to the originating Lead.
+  leadId         String?
+  /// Display label for the report (e.g. "Smith Dental — Aug 2025").
+  title          String
+  /// Primary business URL being analysed.
+  primaryUrl     String
+  /// Free-form business category (e.g. "dentist", "plumber"). Used as the
+  /// keyword when auto-detecting competitors via Google Places searchNearby.
+  category       String?
+  /// Locality context for competitor discovery.
+  city           String?
+  country        String?
+  /// "queued" | "running" | "complete" | "failed".
+  status         String   @default("queued")
+  /// Error message if status = "failed".
+  errorMessage   String?
+  /// Full audit + comparison payload (see worker pipeline).
+  /// Shape: { primary: WebsiteAuditResult, competitors: [...], comparison: {...}, gaps: [...], recommendations: [...] }
+  summaryJson    Json?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  competitors    WebsiteIntelCompetitor[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, leadId])
+}
+
+/// One competitor row per WebsiteIntelReport. Stores the resolved URL plus
+/// the audit payload so the report page can render comparisons without
+/// re-running the audit.
+model WebsiteIntelCompetitor {
+  id             String   @id @default(uuid())
+  organizationId String
+  reportId       String
+  /// Either user-provided or auto-detected via Google Places.
+  source         String   @default("manual")
+  name           String?
+  url            String
+  /// WebsiteAuditResult JSON — populated once the audit finishes.
+  auditJson      Json?
+  /// "queued" | "complete" | "failed".
+  status         String   @default("queued")
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  report         WebsiteIntelReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, reportId])
+}
+
 
 model ApiKey {
   id             String    @id @default(uuid())

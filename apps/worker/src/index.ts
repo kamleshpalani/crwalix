@@ -8,12 +8,15 @@ loadEnv({ path: path.resolve(__dirname, '../.env.local') });
 loadEnv({ path: path.resolve(__dirname, '../../../.env.local') });
 
 import { Worker, type Job } from 'bullmq';
-import { JobName, QueueName, type ScoreLeadJob, type SearchIngestJob } from '@crawlix/shared';
+import { JobName, QueueName, type EnrichmentJob, type IntelBuildJob, type ScoreLeadJob, type SearchIngestJob } from '@crawlix/shared';
 import { getConnection } from './lib/redis';
 import { logger } from './lib/logger';
 import { runSearchIngest } from './pipelines/search-ingest';
 import { runScoreLead } from './pipelines/score-lead';
-import { googleCacheCleanup } from './pipelines/compliance-cleanup';
+import { runWebsiteEnrichment } from './pipelines/enrich-website';
+import { runIntelBuild } from './pipelines/intel-build';
+import { runComplianceCleanup } from './pipelines/compliance-cleanup';
+import { startScheduler } from './pipelines/scheduler';
 
 const connection = getConnection();
 
@@ -53,22 +56,37 @@ const scoringWorker = makeWorker<ScoreLeadJob>(
   8
 );
 
+const enrichmentWorker = makeWorker<EnrichmentJob | IntelBuildJob>(
+  QueueName.ENRICHMENT,
+  async (name, data) => {
+    if (name === JobName.ENRICH_WEBSITE) return runWebsiteEnrichment(data as EnrichmentJob);
+    if (name === JobName.INTEL_BUILD) return runIntelBuild(data as IntelBuildJob);
+    logger.warn({ name }, 'unknown enrichment job');
+  },
+  4
+);
+
 async function shutdown(sig: string): Promise<void> {
   logger.info({ sig }, 'shutting down');
-  await Promise.all([searchWorker.close(), scoringWorker.close()]);
+  await Promise.all([searchWorker.close(), scoringWorker.close(), enrichmentWorker.close()]);
   await connection.quit();
   process.exit(0);
 }
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
-// Google Maps Platform ToS: cached Place data must not be retained longer
-// than 30 days. Run cleanup on boot and every 6 hours thereafter.
-void googleCacheCleanup();
+// Provider ToS compliance: cached data must be purged on a schedule.
+// Google: 30-day max retention. Yelp: 24-hour max retention.
+// Runs on boot and every 1 hour thereafter (Yelp is the tightest window).
+void runComplianceCleanup();
 const complianceTimer = setInterval(
-  () => void googleCacheCleanup(),
-  6 * 60 * 60 * 1000
+  () => void runComplianceCleanup(),
+  60 * 60 * 1000
 );
 complianceTimer.unref();
+
+// Recurring-search scheduler: enqueues `search.ingest` for every Search
+// row whose `nextRunAt` has elapsed. Polls once per minute by default.
+startScheduler();
 
 logger.info('crawlix worker started');
