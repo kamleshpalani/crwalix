@@ -49,10 +49,44 @@ export default async function DashboardPage() {
           href="/leads?priorityTier=HIGH"
         />
         <Stat
-          label="No website"
-          value={stats.leadsNoWebsite}
-          href="/leads?websiteStatus=HIGH_CONFIDENCE_NONE"
+          label="New (7d)"
+          value={stats.leadsNew}
+          href="/leads?discoveredWithin=7d"
         />
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-end justify-between">
+          <h2 className="text-sm font-semibold text-ink-900">Pitch opportunities</h2>
+          <span className="text-xs text-ink-500">click any tile to see matching leads</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <Stat
+            label="No website"
+            value={stats.leadsNoWebsite}
+            href="/leads?websiteStatus=LIKELY_NONE&websiteStatus=HIGH_CONFIDENCE_NONE"
+          />
+          <Stat
+            label="Social-only"
+            value={stats.leadsSocialOnly}
+            href="/leads?socialOnly=true"
+          />
+          <Stat
+            label="Broken / unreachable"
+            value={stats.leadsBroken}
+            href="/leads?websiteHealth=UNREACHABLE"
+          />
+          <Stat
+            label="Outdated site"
+            value={stats.leadsOutdated}
+            href="/leads?websiteHealth=OUTDATED"
+          />
+          <Stat
+            label="No booking / contact form"
+            value={stats.leadsNoForm}
+            href="/leads?missingForm=any"
+          />
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -117,6 +151,62 @@ export default async function DashboardPage() {
             </ul>
           )}
         </div>
+      </section>
+
+      <section className="glass p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-ink-900">
+              Newly discovered businesses
+              <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                last 7 days
+              </span>
+            </h2>
+            <p className="text-xs text-ink-500">
+              Surfaced by your scheduled searches across providers.
+            </p>
+          </div>
+          <Link href="/leads?discoveredWithin=7d" className="text-xs text-ink-500 hover:text-ink-900">
+            All →
+          </Link>
+        </div>
+        {stats.newlyDiscovered.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-500">
+            Nothing new in the last 7 days. Schedule a recurring search from the
+            New Search form to start tracking.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-white/60 text-sm">
+            {stats.newlyDiscovered.map((l) => {
+              const ageHours = Math.round(
+                (Date.now() - new Date(l.createdAt).getTime()) / 3_600_000
+              );
+              const ageLabel = ageHours < 24 ? `${ageHours}h ago` : `${Math.round(ageHours / 24)}d ago`;
+              return (
+                <li key={l.id} className="flex items-center justify-between py-2.5">
+                  <Link href={`/leads/${l.id}`} className="min-w-0 flex-1 hover:underline">
+                    <div className="truncate font-medium text-ink-900">{l.name}</div>
+                    <div className="text-xs text-ink-500">
+                      {[l.city, l.country].filter(Boolean).join(', ') || '—'}
+                      {' · '}
+                      {l.provider}
+                      {' · '}
+                      {ageLabel}
+                    </div>
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    {l.priorityTier && (
+                      <Badge tone={priorityTone(l.priorityTier)}>{l.priorityTier}</Badge>
+                    )}
+                    <Badge tone={websiteTone(l.websiteStatus)}>
+                      {l.websiteStatus.replaceAll('_', ' ').toLowerCase()}
+                    </Badge>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
     </div>
   );

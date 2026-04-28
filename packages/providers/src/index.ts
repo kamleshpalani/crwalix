@@ -6,3 +6,8 @@ export { osmOverpassProvider as osmOverpassSearchProvider } from './search/osm-o
 
 // Unified leadProviders barrel — preferred import surface for new code.
 export * from './leadProviders';
+
+// External growth APIs (PageSpeed, BuiltWith, Hunter, Apollo, ZeroBounce,
+// NeverBounce, ScreenshotOne, BrightLocal). All feature-flagged off when
+// no env key is set.
+export * from './external';

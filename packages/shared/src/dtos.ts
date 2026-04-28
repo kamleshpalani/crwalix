@@ -54,6 +54,9 @@ export const LeadListItemSchema = z.object({
 export type LeadListItem = z.infer<typeof LeadListItemSchema>;
 
 /** Search create request DTO. */
+export const ScheduleFrequencyEnum = z.enum(['NONE', 'DAILY', 'WEEKLY', 'MONTHLY']);
+export type ScheduleFrequency = z.infer<typeof ScheduleFrequencyEnum>;
+
 export const CreateSearchSchema = z.object({
   projectId: z.string().uuid(),
   name: z.string().min(1).max(120),
@@ -72,6 +75,8 @@ export const CreateSearchSchema = z.object({
   leadFocus: z.nativeEnum(LeadFocus).default(LeadFocus.ALL),
   enrichOnInsert: z.boolean().default(true),
   scoreOnInsert: z.boolean().default(true),
+  /** Recurring schedule. NONE = one-shot. */
+  scheduleFrequency: ScheduleFrequencyEnum.default('NONE'),
 });
 export type CreateSearchInput = z.infer<typeof CreateSearchSchema>;
 
@@ -83,15 +88,45 @@ export const LeadFilterSchema = z.object({
   websiteStatus: z
     .union([z.nativeEnum(WebsiteStatus), z.array(z.nativeEnum(WebsiteStatus))])
     .optional(),
+  websiteHealth: z
+    .enum(['FRESH', 'NEEDS_REVIEW', 'OUTDATED', 'UNREACHABLE', 'NOT_AUDITED'])
+    .optional(),
+  outreachSuitable: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .transform((v) => (typeof v === 'string' ? v === 'true' : v))
+    .optional(),
+  /**
+   * Filter to leads whose only "website" is a social profile / link-in-bio
+   * (Facebook, Instagram, Linktree, business.site, wa.me, etc.). These are
+   * effectively no-website leads and convert well for new-website pitches.
+   */
+  socialOnly: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .transform((v) => (typeof v === 'string' ? v === 'true' : v))
+    .optional(),
+  /**
+   * Filter to leads whose audited website is missing a contact form,
+   * booking form, or both. `any` matches missing-either.
+   */
+  missingForm: z.enum(['contact', 'booking', 'any']).optional(),
   priorityTier: z
     .union([z.nativeEnum(PriorityTier), z.array(z.nativeEnum(PriorityTier))])
     .optional(),
   status: z
     .union([z.nativeEnum(LeadStatus), z.array(z.nativeEnum(LeadStatus))])
     .optional(),
+  businessScale: z
+    .union([
+      z.enum(['SME', 'MID_MARKET', 'LARGE', 'UNKNOWN']),
+      z.array(z.enum(['SME', 'MID_MARKET', 'LARGE', 'UNKNOWN']))
+    ])
+    .optional(),
   city: z.string().optional(),
   state: z.string().optional(),
   country: z.string().optional(),
+  postalCode: z.string().optional(),
+  /** Newly-discovered window: 24h | 7d | 30d | 90d. */
+  discoveredWithin: z.enum(['24h', '7d', '30d', '90d']).optional(),
   minScore: z.number().int().min(0).max(100).optional(),
   search: z.string().optional(),
   tag: z.string().optional(),

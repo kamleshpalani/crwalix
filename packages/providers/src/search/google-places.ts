@@ -63,7 +63,7 @@ function pickComponent(
   components: GPlace['addressComponents'],
   type: string
 ): string | undefined {
-  return components?.find((c) => c.types.includes(type))?.longText ?? undefined;
+  return components?.find((c) => Array.isArray(c.types) && c.types.includes(type))?.longText ?? undefined;
 }
 
 function toNormalized(p: GPlace): NormalizedLead {
@@ -139,6 +139,14 @@ export const googlePlacesProvider: SearchProvider = {
 
     const useNearby = typeof query.lat === 'number' && typeof query.lng === 'number' && !!query.radiusMeters;
 
+    // Map the generic `rankPreference` to Google's per-endpoint enum.
+    // searchText:   RELEVANCE | DISTANCE
+    // searchNearby: POPULARITY | DISTANCE
+    const rankText =
+      query.rankPreference === 'distance' ? 'DISTANCE' : 'RELEVANCE';
+    const rankNearby =
+      query.rankPreference === 'distance' ? 'DISTANCE' : 'POPULARITY';
+
     let data: GResponse;
     if (useNearby) {
       data = await callApi(
@@ -146,6 +154,7 @@ export const googlePlacesProvider: SearchProvider = {
         {
           includedTypes: query.niche ? [query.niche] : undefined,
           maxResultCount: Math.min(20, query.limit),
+          rankPreference: rankNearby,
           locationRestriction: {
             circle: {
               center: { latitude: query.lat, longitude: query.lng },
@@ -163,6 +172,7 @@ export const googlePlacesProvider: SearchProvider = {
           textQuery: buildTextQuery(query),
           pageToken: cursor,
           pageSize: Math.min(20, query.limit),
+          rankPreference: rankText,
           regionCode: query.country
         },
         apiKey,

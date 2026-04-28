@@ -1,7 +1,13 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { LEAD_STATUS_LIFECYCLE, LEAD_STATUS_LABELS, BUSINESS_SCALE_LABELS } from '@crawlix/shared';
+import {
+  getAllCountries,
+  getStatesByCountry,
+  getCitiesByState
+} from '@/lib/locations';
 
 const SORTS: Array<{ value: string; label: string }> = [
   { value: '-score', label: 'Score (desc)' },
@@ -12,13 +18,26 @@ const SORTS: Array<{ value: string; label: string }> = [
 ];
 
 const TIERS = ['HIGH', 'MEDIUM', 'LOW'];
-const STATUSES = ['NEW', 'ENRICHED', 'REVIEWED', 'EXPORTED', 'ARCHIVED'];
+const STATUSES = LEAD_STATUS_LIFECYCLE;
 const WEBSITE = [
-  { value: 'EXISTS', label: 'Has website' },
+  { value: 'EXISTS', label: 'Has website (raw)' },
   { value: 'EXISTS_MISSING_IN_SOURCE', label: 'Found via enrichment' },
   { value: 'LIKELY_NONE', label: 'Likely none' },
   { value: 'HIGH_CONFIDENCE_NONE', label: 'Confirmed none' },
   { value: 'UNKNOWN', label: 'Unknown' }
+];
+
+const HEALTH = [
+  { value: 'FRESH', label: 'Fresh — modern site' },
+  { value: 'NEEDS_REVIEW', label: 'Needs review' },
+  { value: 'OUTDATED', label: 'Outdated' },
+  { value: 'UNREACHABLE', label: 'Unreachable / parked' },
+  { value: 'NOT_AUDITED', label: 'Not audited yet' }
+];
+
+const FIT = [
+  { value: 'true', label: 'Suitable to contact' },
+  { value: 'false', label: 'Skip — low pitch value' }
 ];
 
 export default function LeadFilters() {
@@ -29,6 +48,35 @@ export default function LeadFilters() {
   // useSearchParams() may be null when rendered above the route boundary;
   // wrap to keep callers terse.
   const get = (k: string) => sp?.get(k) ?? '';
+
+  const countries = useMemo(() => getAllCountries(), []);
+
+  // Cascading geo state. Country is ISO-2; state/city are stored as
+  // readable names (which is what the ingest pipeline writes onto leads).
+  const [countryCode, setCountryCode] = useState<string>(() =>
+    (get('country') || '').toUpperCase()
+  );
+  const [stateName, setStateNameLocal] = useState<string>(() => get('state'));
+  const [city, setCity] = useState<string>(() => get('city'));
+
+  const states = useMemo(
+    () => (countryCode ? getStatesByCountry(countryCode) : []),
+    [countryCode]
+  );
+  const selectedStateCode = useMemo(() => {
+    if (!stateName) return '';
+    const hit = states.find(
+      (s) => s.name.toLowerCase() === stateName.toLowerCase()
+    );
+    return hit?.code ?? '';
+  }, [states, stateName]);
+  const cities = useMemo(
+    () =>
+      countryCode && selectedStateCode
+        ? getCitiesByState(countryCode, selectedStateCode)
+        : [],
+    [countryCode, selectedStateCode]
+  );
 
   function update(form: HTMLFormElement) {
     const fd = new FormData(form);
@@ -63,20 +111,78 @@ export default function LeadFilters() {
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-ink-700">City</label>
-        <input
-          name="city"
-          defaultValue={get('city')}
+        <label className="block text-xs font-medium text-ink-700">Country</label>
+        <select
+          name="country"
+          value={countryCode}
+          onChange={(e) => {
+            setCountryCode(e.currentTarget.value);
+            setStateNameLocal('');
+            setCity('');
+          }}
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-        />
+        >
+          <option value="">Any country</option>
+          {countries.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-ink-700">Country</label>
+        <label className="block text-xs font-medium text-ink-700">State / region</label>
+        <select
+          name="state"
+          value={stateName}
+          onChange={(e) => {
+            setStateNameLocal(e.currentTarget.value);
+            setCity('');
+          }}
+          disabled={!countryCode || states.length === 0}
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-ink-400"
+        >
+          <option value="">Any state</option>
+          {states.map((s) => (
+            <option key={s.code} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-ink-700">City</label>
+        {cities.length > 0 ? (
+          <select
+            name="city"
+            value={city}
+            onChange={(e) => setCity(e.currentTarget.value)}
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Any city</option>
+            {cities.map((c) => (
+              <option key={`${c.name}-${c.stateCode}`} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            name="city"
+            value={city}
+            onChange={(e) => setCity(e.currentTarget.value)}
+            placeholder="Type a city…"
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+        )}
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-ink-700">Postal / ZIP code</label>
         <input
-          name="country"
-          maxLength={2}
-          defaultValue={get('country')}
-          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase"
+          name="postalCode"
+          defaultValue={get('postalCode')}
+          placeholder="e.g. 94105"
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
       <div>
@@ -121,7 +227,37 @@ export default function LeadFilters() {
         </select>
       </div>
       <div className="col-span-2 md:col-span-3">
-        <label className="block text-xs font-medium text-ink-700">Website status</label>
+        <label className="block text-xs font-medium text-ink-700">Website health (audit)</label>
+        <select
+          name="websiteHealth"
+          defaultValue={get('websiteHealth')}
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Any</option>
+          {HEALTH.map((h) => (
+            <option key={h.value} value={h.value}>
+              {h.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="col-span-2 md:col-span-3">
+        <label className="block text-xs font-medium text-ink-700">Outreach fit</label>
+        <select
+          name="outreachSuitable"
+          defaultValue={get('outreachSuitable')}
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Any</option>
+          {FIT.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="col-span-2 md:col-span-3">
+        <label className="block text-xs font-medium text-ink-700">Website presence (ingest)</label>
         <select
           name="websiteStatus"
           defaultValue={get('websiteStatus')}
@@ -145,9 +281,38 @@ export default function LeadFilters() {
           <option value="">Any</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {LEAD_STATUS_LABELS[s] ?? s}
             </option>
           ))}
+        </select>
+      </div>
+      <div className="col-span-2 md:col-span-6">
+        <label className="block text-xs font-medium text-ink-700">Business scale</label>
+        <select
+          name="businessScale"
+          defaultValue={get('businessScale')}
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Any</option>
+          {(['SME', 'MID_MARKET', 'LARGE', 'UNKNOWN'] as const).map((s) => (
+            <option key={s} value={s}>
+              {BUSINESS_SCALE_LABELS[s]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="col-span-2 md:col-span-6">
+        <label className="block text-xs font-medium text-ink-700">Newly discovered</label>
+        <select
+          name="discoveredWithin"
+          defaultValue={get('discoveredWithin')}
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Any time</option>
+          <option value="24h">Last 24 hours</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
         </select>
       </div>
 

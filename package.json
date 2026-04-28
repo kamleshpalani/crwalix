@@ -15,6 +15,8 @@
     "web:build": "npm run build --workspace @crawlix/web",
     "worker:dev": "npm run dev --workspace @crawlix/worker",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @crawlix/web && npm run typecheck --workspace @crawlix/worker",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\"",
     "db:generate": "npm run prisma:generate --workspace @crawlix/db",
     "db:migrate": "npm run prisma:migrate --workspace @crawlix/db",
@@ -39,7 +41,8 @@
     "@types/node": "^20.14.10",
     "eslint": "^9.8.0",
     "tsx": "^4.16.2",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.5"
   },
   "engines": {
     "node": ">=20"

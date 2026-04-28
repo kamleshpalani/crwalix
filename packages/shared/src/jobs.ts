@@ -16,6 +16,7 @@ export const JobName = {
   AI_OUTREACH: 'ai.outreach',
   AI_CLASSIFY: 'ai.classify',
   EXPORT_BUILD: 'export.build',
+  INTEL_BUILD: 'intel.build',
   USAGE_ROLLUP: 'system.usageRollup',
   PROVIDER_HEALTH: 'system.providerHealth',
   LEAD_PURGE: 'system.leadPurge',
@@ -55,6 +56,9 @@ export interface SearchIngestJob {
     scoreOnInsert: boolean;
     /** Lead-focus filter; worker drops non-matching leads before insert. */
     leadFocus?: LeadFocus;
+    /** When true, the worker emits a LEADS_DISCOVERED notification if any
+     *  newly-inserted leads land. Set by the recurring-search scheduler. */
+    notifyOnNewLeads?: boolean;
   };
 }
 
@@ -99,6 +103,15 @@ export interface ExportBuildJob {
   options: { googleSheetId?: string; includeRawPayload?: boolean };
 }
 
+export interface IntelBuildJob {
+  organizationId: string;
+  reportId: string;
+  /** When true, also fetch competitors via Google Places searchNearby. */
+  autoDetectCompetitors: boolean;
+  /** Max competitors to audit (manual + auto, capped). */
+  maxCompetitors: number;
+}
+
 /** Discriminated union for type-safe dispatch in the worker. */
 export type AnyJob =
   | ({ name: typeof JobName.SEARCH_INGEST } & SearchIngestJob)
@@ -116,4 +129,5 @@ export type AnyJob =
         | typeof JobName.AI_OUTREACH
         | typeof JobName.AI_CLASSIFY;
     } & AiTaskJob)
-  | ({ name: typeof JobName.EXPORT_BUILD } & ExportBuildJob);
+  | ({ name: typeof JobName.EXPORT_BUILD } & ExportBuildJob)
+  | ({ name: typeof JobName.INTEL_BUILD } & IntelBuildJob);

@@ -1,6 +1,10 @@
 import { withOrg } from '@crawlix/db';
+import { Prisma } from '@crawlix/db';
 import { enqueue } from '@/lib/queue';
-import { JobName, QueueName, type CreateSearchInput } from '@crawlix/shared';
+import { JobName, QueueName, type CreateSearchInput, type ScheduleFrequency } from '@crawlix/shared';
+import { computeNextRunAt } from '@/lib/schedule';
+
+export { computeNextRunAt };
 
 export const searchesService = {
   async list(orgId: string, projectId?: string) {
@@ -43,6 +47,9 @@ export const searchesService = {
           resultLimit: input.resultLimit,
           provider: input.provider,
           leadFocus: input.leadFocus,
+          scheduleFrequency: input.scheduleFrequency,
+          nextRunAt: computeNextRunAt(input.scheduleFrequency),
+          lastRunAt: new Date(),
           createdById: userId
         }
       });
@@ -168,5 +175,137 @@ export const searchesService = {
         data: { status: 'CANCELED', finishedAt: new Date(), error: 'Canceled by user' }
       })
     );
+  },
+
+  /**
+   * Edit the persisted query/limits/schedule of an existing search.
+   * The new values take effect on the next re-run (or scheduler tick).
+   * If `scheduleFrequency` changes, `nextRunAt` is recomputed.
+   */
+  async update(orgId: string, id: string, patch: SearchUpdateInput, editorUserId?: string) {
+    return withOrg(orgId, async (tx) => {
+      const existing = await tx.search.findFirst({ where: { id } });
+      if (!existing) throw new Error('Search not found');
+
+      const data: Record<string, unknown> = {};
+      const diff: Record<string, { from: unknown; to: unknown }> = {};
+
+      const trackedFields: (keyof SearchUpdateInput)[] = [
+        'name', 'keyword', 'niche', 'city', 'state', 'country', 'postalCode',
+        'radiusMeters', 'resultLimit', 'leadFocus', 'scheduleFrequency'
+      ];
+
+      for (const f of trackedFields) {
+        const next = patch[f];
+        if (next === undefined) continue;
+        const prev = (existing as unknown as Record<string, unknown>)[f];
+        if (prev !== next) {
+          (data as Record<string, unknown>)[f] = next;
+          diff[f as string] = { from: prev ?? null, to: next ?? null };
+        }
+      }
+
+      if (patch.scheduleFrequency !== undefined && patch.scheduleFrequency !== existing.scheduleFrequency) {
+        data.nextRunAt = computeNextRunAt(patch.scheduleFrequency);
+      }
+
+      if (Object.keys(data).length === 0) return existing;
+
+      const updated = await tx.search.update({ where: { id }, data });
+
+      if (Object.keys(diff).length > 0) {
+        await tx.searchEdit.create({
+          data: {
+            organizationId: orgId,
+            searchId: id,
+            editedById: editorUserId ?? null,
+            diff: diff as unknown as Prisma.InputJsonValue
+          }
+        });
+      }
+
+      return updated;
+    });
+  },
+
+  async listEdits(orgId: string, searchId: string, limit = 20) {
+    return withOrg(orgId, async (tx) => {
+      const edits = await tx.searchEdit.findMany({
+        where: { searchId },
+        orderBy: { createdAt: 'desc' },
+        take: limit
+      });
+      const userIds = Array.from(
+        new Set(edits.map((e) => e.editedById).filter((v): v is string => !!v))
+      );
+      const users = userIds.length
+        ? await tx.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, fullName: true, email: true }
+          })
+        : [];
+      const byId = new Map(users.map((u) => [u.id, u]));
+      return edits.map((e) => {
+        const u = e.editedById ? byId.get(e.editedById) : undefined;
+        return {
+          ...e,
+          editedByName: u?.fullName?.trim() || u?.email || null
+        };
+      });
+    });
+  },
+
+  /**
+   * Clone an existing search into a brand-new record (no runs, optional new
+   * name/projectId). Returns the new search row. Does NOT auto-dispatch — the
+   * caller decides whether to immediately re-run the duplicate.
+   */
+  async duplicate(
+    orgId: string,
+    userId: string,
+    sourceId: string,
+    overrides: { name?: string; projectId?: string } = {}
+  ) {
+    return withOrg(orgId, async (tx) => {
+      const src = await tx.search.findFirst({ where: { id: sourceId } });
+      if (!src) throw new Error('Source search not found');
+
+      const newName = overrides.name?.trim() || `${src.name} (copy)`;
+      const newProjectId = overrides.projectId ?? src.projectId;
+
+      return tx.search.create({
+        data: {
+          organizationId: orgId,
+          projectId: newProjectId,
+          name: newName,
+          niche: src.niche,
+          keyword: src.keyword,
+          country: src.country,
+          state: src.state,
+          city: src.city,
+          postalCode: src.postalCode,
+          radiusMeters: src.radiusMeters,
+          resultLimit: src.resultLimit,
+          provider: src.provider,
+          leadFocus: src.leadFocus,
+          scheduleFrequency: 'NONE',
+          createdById: userId
+        }
+      });
+    });
   }
 };
+
+export interface SearchUpdateInput {
+  name?: string;
+  keyword?: string | null;
+  niche?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
+  radiusMeters?: number | null;
+  resultLimit?: number;
+  leadFocus?: 'ALL' | 'NO_WEBSITE' | 'HIGH_OR_MED';
+  scheduleFrequency?: ScheduleFrequency;
+}

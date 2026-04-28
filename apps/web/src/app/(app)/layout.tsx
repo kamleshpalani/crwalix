@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import HeaderUser from '@/components/HeaderUser';
 import HeaderOrg from '@/components/HeaderOrg';
+import NotificationsBell from '@/components/NotificationsBell';
 import Sidebar from '@/components/Sidebar';
 import AuroraBackground from '@/components/AuroraBackground';
 import PageTransition from '@/components/PageTransition';
@@ -56,6 +57,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {hasClerk ? (
               <div className="flex items-center gap-2">
                 <HeaderOrg />
+                <NotificationsBell />
                 <HeaderUser />
               </div>
             ) : (

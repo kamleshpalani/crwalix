@@ -50,7 +50,7 @@ export async function updateProjectAction(formData: FormData): Promise<ActionRes
   }
 
   try {
-    await projectsService.update(ctx.orgId, parsed.data);
+    await projectsService.update(ctx.orgId, parsed.data, ctx.userId);
   } catch (e) {
     console.error('[updateProjectAction] failed', e);
     return { ok: false, error: e instanceof Error ? e.message : 'Update failed' };
@@ -59,6 +59,26 @@ export async function updateProjectAction(formData: FormData): Promise<ActionRes
   revalidatePath(`/projects/${parsed.data.id}`);
   revalidatePath('/dashboard');
   return { ok: true };
+}
+
+export async function duplicateProjectAction(
+  formData: FormData
+): Promise<ActionResult & { newId?: string }> {
+  const ctx = await requireOrg();
+  if (isResponse(ctx) || isAuthError(ctx)) return { ok: false, error: 'No active organization.' };
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing project id.' };
+
+  try {
+    const created = await projectsService.duplicate(ctx.orgId, ctx.userId, id);
+    revalidatePath('/projects');
+    revalidatePath('/dashboard');
+    return { ok: true, newId: created.id };
+  } catch (e) {
+    console.error('[duplicateProjectAction] failed', e);
+    return { ok: false, error: e instanceof Error ? e.message : 'Duplicate failed' };
+  }
 }
 
 export async function deleteProjectAction(formData: FormData): Promise<void> {

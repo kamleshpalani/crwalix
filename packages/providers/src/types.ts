@@ -22,6 +22,15 @@ export interface SearchQuery {
   lng?: number;
   radiusMeters?: number;
   limit: number;
+  /**
+   * Optional ranking hint for providers that support multiple sort orders.
+   * The worker rotates this per `SearchRun` (derived from `searchRunId`) so
+   * back-to-back re-runs surface different leads instead of returning the
+   * same top-N every time. Adapters interpret it as their native equivalent
+   * (Google Places `rankPreference`, Yelp `sort_by`, etc.) and ignore it
+   * when not applicable.
+   */
+  rankPreference?: 'relevance' | 'distance' | 'rating' | 'review_count';
 }
 
 export interface SearchPage {
@@ -30,6 +39,12 @@ export interface SearchPage {
   nextCursor?: string;
   /** Provider-reported total, when available. */
   total?: number;
+  /**
+   * Optional non-fatal warning (e.g. "region not supported"). The worker
+   * stores this on `SearchRun.metadata` so the UI can show a clear reason
+   * for empty result sets instead of a silent 0.
+   */
+  warning?: string;
 }
 
 /** A search provider — the primary discovery adapter. */

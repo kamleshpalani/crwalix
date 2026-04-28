@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { updateProjectAction, deleteProjectAction } from '../actions';
+import {
+  updateProjectAction,
+  deleteProjectAction,
+  duplicateProjectAction
+} from '../actions';
 
 export default function ProjectEditForm({
   id,
@@ -20,13 +24,34 @@ export default function ProjectEditForm({
 
   if (!editing) {
     return (
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setEditing(true)}
           className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-white/70"
         >
           Edit
         </button>
+        <form
+          action={(fd) => {
+            startTransition(async () => {
+              const res = await duplicateProjectAction(fd);
+              if (res.ok && res.newId) {
+                router.push(`/projects/${res.newId}`);
+              } else if (!res.ok) {
+                setMsg(res.error);
+              }
+            });
+          }}
+        >
+          <input type="hidden" name="id" value={id} />
+          <button
+            type="submit"
+            disabled={isPending}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-white/70 disabled:opacity-50"
+          >
+            {isPending ? 'Duplicating…' : 'Duplicate'}
+          </button>
+        </form>
         <form
           action={(fd) => {
             if (!confirm('Delete this project and all its searches/leads links?')) return;
@@ -45,6 +70,7 @@ export default function ProjectEditForm({
             {isPending ? 'Deleting…' : 'Delete'}
           </button>
         </form>
+        {msg && <span className="text-xs text-rose-600">{msg}</span>}
       </div>
     );
   }

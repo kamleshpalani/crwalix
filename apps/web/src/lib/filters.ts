@@ -8,7 +8,7 @@ export function parseLeadFilter(
   for (const [k, v] of Object.entries(searchParams)) {
     if (v === undefined) continue;
     // Allow comma-separated multi-values for websiteStatus / priorityTier.
-    if ((k === 'websiteStatus' || k === 'priorityTier' || k === 'status') && typeof v === 'string' && v.includes(',')) {
+    if ((k === 'websiteStatus' || k === 'priorityTier' || k === 'status' || k === 'businessScale') && typeof v === 'string' && v.includes(',')) {
       flat[k] = v.split(',').map((s) => s.trim()).filter(Boolean);
     } else if (Array.isArray(v) && v.length === 1) {
       flat[k] = v[0];

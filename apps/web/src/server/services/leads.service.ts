@@ -14,14 +14,57 @@ export const leadsService = {
     const skip = (filter.page - 1) * filter.pageSize;
 
     const where: Record<string, unknown> = { organizationId: orgId };
-    if (filter.city) where.city = filter.city;
-    if (filter.state) where.state = filter.state;
-    if (filter.country) where.country = filter.country;
+    if (filter.city) where.city = { contains: filter.city, mode: 'insensitive' };
+    if (filter.state) where.state = { contains: filter.state, mode: 'insensitive' };
+    if (filter.country) where.country = { equals: filter.country, mode: 'insensitive' };
+    if (filter.postalCode) where.postalCode = { contains: filter.postalCode, mode: 'insensitive' };
     if (filter.minScore !== undefined) where.score = { gte: filter.minScore };
     if (filter.websiteStatus) {
       where.websiteStatus = Array.isArray(filter.websiteStatus)
         ? { in: filter.websiteStatus }
         : filter.websiteStatus;
+    }
+    if (filter.websiteHealth) {
+      where.websiteHealth = filter.websiteHealth;
+    }
+    if (filter.outreachSuitable !== undefined) {
+      // websiteAudit is JSON; filter by audit.outreachFit.suitable.
+      where.websiteAudit = {
+        path: ['outreachFit', 'suitable'],
+        equals: filter.outreachSuitable
+      };
+    }
+    if (filter.socialOnly) {
+      // Match websites whose host is a social network / link-in-bio. Kept in
+      // sync with SOCIAL_ONLY_HOSTS in packages/scoring/src/rules/default.ts.
+      const SOCIAL_HOSTS = [
+        'facebook.com', 'm.facebook.com', 'fb.com',
+        'instagram.com', 'linktr.ee', 'linkin.bio',
+        'business.site', 'sites.google.com',
+        'wa.me', 'api.whatsapp.com', 't.me',
+        'twitter.com', 'x.com', 'tiktok.com', 'youtube.com'
+      ];
+      where.OR = [
+        ...((where.OR as object[] | undefined) ?? []),
+        ...SOCIAL_HOSTS.map((h) => ({ website: { contains: h, mode: 'insensitive' as const } }))
+      ];
+    }
+    if (filter.missingForm) {
+      // websiteAudit.signals.{hasContactForm,hasBookingForm} are booleans
+      // populated by the audit. Filter accordingly. Only meaningful for
+      // EXISTS leads — otherwise the signals are unset.
+      const path = (key: 'hasContactForm' | 'hasBookingForm') => ({
+        websiteAudit: { path: ['signals', key], equals: false } as const
+      });
+      const conds =
+        filter.missingForm === 'contact' ? [path('hasContactForm')]
+        : filter.missingForm === 'booking' ? [path('hasBookingForm')]
+        : [path('hasContactForm'), path('hasBookingForm')]; // 'any' → missing both
+      where.AND = [
+        ...((where.AND as object[] | undefined) ?? []),
+        { websiteStatus: 'EXISTS' },
+        ...conds
+      ];
     }
     if (filter.priorityTier) {
       where.priorityTier = Array.isArray(filter.priorityTier)
@@ -48,8 +91,25 @@ export const leadsService = {
         ? { in: filter.status }
         : filter.status;
     }
+    if (filter.businessScale) {
+      where.businessScale = Array.isArray(filter.businessScale)
+        ? { in: filter.businessScale }
+        : filter.businessScale;
+    }
     if (filter.tag) {
       where.tags = { has: filter.tag };
+    }
+    if (filter.discoveredWithin) {
+      const ms: Record<string, number> = {
+        '24h': 24 * 60 * 60 * 1000,
+        '7d':  7 * 24 * 60 * 60 * 1000,
+        '30d': 30 * 24 * 60 * 60 * 1000,
+        '90d': 90 * 24 * 60 * 60 * 1000
+      };
+      const window = ms[filter.discoveredWithin];
+      if (window) {
+        where.createdAt = { gte: new Date(Date.now() - window) };
+      }
     }
 
     const orderBy = orderByFromSort(filter.sort);
@@ -112,6 +172,36 @@ export const leadsService = {
         where: { id },
         data: { notes: notes.length ? notes : null }
       })
+    );
+  },
+
+  /**
+   * Update user-editable contact fields on a lead. Only fields explicitly
+   * present in the patch are touched; empty strings clear nullable fields.
+   */
+  async patchContact(
+    orgId: string,
+    id: string,
+    patch: {
+      ownerName?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      website?: string | null;
+      facebookUrl?: string | null;
+      instagramUrl?: string | null;
+      googleProfileUrl?: string | null;
+      address?: string | null;
+      postalCode?: string | null;
+    }
+  ) {
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
+      data[k] = v;
+    }
+    if (Object.keys(data).length === 0) return null;
+    return withOrg(orgId, (tx) =>
+      tx.lead.update({ where: { id }, data })
     );
   },
 

@@ -6,7 +6,7 @@ import { searchesService } from '@/server/services/searches.service';
 import { providersService } from '@/server/services/providers.service';
 import { CreateSearchSchema, LeadFocus, PriorityTier } from '@crawlix/shared';
 import { READY_PROVIDER_IDS } from '@/lib/providers';
-import { composeLocation } from '@/lib/locations';
+import { composeLocation, getCountryName, getStateName } from '@/lib/locations';
 
 export type SearchActionResult =
   | { ok: true; created: Array<{ provider: string; searchId: string; runId: string }> }
@@ -63,18 +63,29 @@ export async function createSearchAction(formData: FormData): Promise<SearchActi
   const keyword = String(formData.get('keyword') ?? '').trim() || undefined;
   const niche = String(formData.get('niche') ?? '').trim() || undefined;
   const countryCode = String(formData.get('country') ?? '').trim().toUpperCase() || undefined;
-  const state = String(formData.get('state') ?? '').trim() || undefined;
+  const stateCode = String(formData.get('state') ?? '').trim() || undefined;
   const county = String(formData.get('county') ?? '').trim() || undefined;
   const cityMajor = String(formData.get('cityMajor') ?? '').trim() || undefined;
   const customCity = String(formData.get('customCity') ?? '').trim() || undefined;
   const finalCity = customCity || cityMajor || undefined;
+  const postalCode = String(formData.get('postalCode') ?? '').trim() || undefined;
   const resultLimit = Number(formData.get('resultLimit') ?? 20);
+  const scheduleFrequencyRaw = String(formData.get('scheduleFrequency') ?? 'NONE');
+  const scheduleFrequency = (
+    ['NONE', 'DAILY', 'WEEKLY', 'MONTHLY'].includes(scheduleFrequencyRaw)
+      ? scheduleFrequencyRaw
+      : 'NONE'
+  ) as 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+  // Convert ISO codes to readable names for downstream providers + storage.
+  const stateName = stateCode && countryCode ? getStateName(countryCode, stateCode) ?? stateCode : undefined;
+  const countryName = countryCode ? getCountryName(countryCode) ?? countryCode : undefined;
 
   const composedLocation = composeLocation({
     customCity,
     city: cityMajor,
     county,
-    state,
+    state: stateCode,
     country: countryCode
   });
   const finalKeyword = keyword
@@ -91,13 +102,15 @@ export async function createSearchAction(formData: FormData): Promise<SearchActi
       keyword: finalKeyword,
       niche,
       city: finalCity,
-      state,
+      state: stateName,
       country: countryCode,
+      postalCode,
       resultLimit,
       provider: provider as 'google_places' | 'yelp_fusion' | 'osm' | 'foursquare',
       leadFocus,
       enrichOnInsert: false,
-      scoreOnInsert: true
+      scoreOnInsert: true,
+      scheduleFrequency
     };
     const parsed = CreateSearchSchema.safeParse(raw);
     if (!parsed.success) {

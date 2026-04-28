@@ -3,9 +3,12 @@ import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
 import { providersService } from '@/server/services/providers.service';
 import { outreachService, suppressionService } from '@/server/services/outreach.service';
+import { listExternalProviders } from '@crawlix/providers';
 import ProviderConfigForm from './ProviderConfigForm';
 import ProviderTermsForm from './ProviderTermsForm';
 import OutreachSettingsForm from './OutreachSettingsForm';
+import NotificationPrefsForm from './NotificationPrefsForm';
+import { withOrg } from '@crawlix/db';
 
 interface KnownProvider {
   id: string;
@@ -25,7 +28,7 @@ const KNOWN_PROVIDERS: KnownProvider[] = [
       'https://cloud.google.com/maps-platform/terms/maps-service-terms'
   },
   {
-    id: 'yelp',
+    id: 'yelp_fusion',
     name: 'Yelp Fusion',
     envHint: 'YELP_FUSION_API_KEY',
     description: 'Strong for local SMBs; 24-hour cache limit enforced.',
@@ -55,6 +58,12 @@ export default async function SettingsPage() {
   ]);
   const compliance = await outreachService.complianceStatus(ctx.orgId);
   const byProvider = new Map(configs.map((c) => [c.provider, c]));
+  const orgPrefs = await withOrg(ctx.orgId, (tx) =>
+    tx.organization.findUnique({
+      where: { id: ctx.orgId },
+      select: { notificationWebhookUrl: true, notificationEmail: true }
+    })
+  );
 
   return (
     <div className="space-y-8">
@@ -118,6 +127,20 @@ export default async function SettingsPage() {
       </section>
 
       <section>
+        <h2 className="text-lg font-medium">Notifications</h2>
+        <p className="mt-1 text-sm text-ink-500">
+          Where to deliver alerts when scheduled searches discover new businesses.
+          The dashboard bell always shows them; webhook + email are optional add-ons.
+        </p>
+        <div className="mt-4 glass p-4">
+          <NotificationPrefsForm
+            initialWebhookUrl={orgPrefs?.notificationWebhookUrl ?? ''}
+            initialEmail={orgPrefs?.notificationEmail ?? ''}
+          />
+        </div>
+      </section>
+
+      <section>
         <h2 className="text-lg font-medium">Scoring rules</h2>
         <p className="mt-1 text-sm text-ink-500">
           The default ruleset (v1.0.0) is currently active. Edit{' '}
@@ -141,8 +164,42 @@ export default async function SettingsPage() {
           ))}
         </ul>
         <p className="mt-3 text-xs text-ink-500">
-          Tier thresholds: HIGH ≥ 75, MEDIUM ≥ 45, otherwise LOW.
+          Tier thresholds: HIGH ≥ 80, MEDIUM ≥ 60, otherwise LOW.
         </p>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-medium">External enrichment APIs</h2>
+        <p className="mt-1 text-xs text-ink-500">
+          Optional paid integrations. Each is feature-flagged on its environment variable —
+          missing keys silently disable the feature, the rest of the app keeps working.
+        </p>
+        <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-white/60 text-sm">
+          {listExternalProviders().map((p) => (
+            <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{p.name}</span>
+                  <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-600">
+                    {p.category}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-xs text-ink-500">
+                  Env: <span className="font-mono">{p.envVars.join(', ')}</span>
+                </div>
+              </div>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  p.configured
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-ink-100 text-ink-600'
+                }`}
+              >
+                {p.configured ? 'Configured' : 'Not configured'}
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section>
