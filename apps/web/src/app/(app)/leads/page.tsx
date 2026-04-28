@@ -3,6 +3,8 @@ import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
 import { Badge, priorityTone, websiteTone } from '@/components/Badge';
 import { Pagination } from '@/components/Pagination';
+import PageHeader from '@/components/PageHeader';
+import EmptyState from '@/components/EmptyState';
 import { leadsService } from '@/server/services/leads.service';
 import { parseLeadFilter, buildBaseHref } from '@/lib/filters';
 import { getPriorityRecommendation, SERVICE_PITCH_LABELS, BUSINESS_SCALE_LABELS, type ServicePitch, type BusinessScale } from '@crawlix/shared';
@@ -24,36 +26,57 @@ export default async function LeadsPage({
   const baseHref = buildBaseHref('/leads', filter);
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Leads</h1>
-        <span className="text-sm text-ink-500">{total} total</span>
-      </div>
-      <p className="mt-1 text-sm text-ink-600">
-        Enriched and scored local-business leads.
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Leads"
+        icon="M16 11a4 4 0 10-8 0 4 4 0 008 0zM3 21a9 9 0 0118 0"
+        description="Enriched and scored local-business leads. Filter, prioritize, and ship the best to your CRM."
+        chips={
+          <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-medium text-ink-600 backdrop-blur">
+            {total.toLocaleString()} total
+          </span>
+        }
+        actions={
+          <Link href="/exports" className="btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Export
+          </Link>
+        }
+      />
 
-      <div className="mt-4">
+      <div className="glass p-4">
         <LeadFilters />
       </div>
 
       {items.length > 0 && (
-        <div className="mt-4">
+        <div>
           <LeadsBulkActions ids={items.map((l) => l.id)} />
         </div>
       )}
 
-      <ul className="mt-6 glass overflow-hidden divide-y divide-white/60">
-        {items.length === 0 && (
-          <li className="p-4 text-sm text-ink-500">
-            No leads match the current filter. Adjust filters or run a search.
-          </li>
-        )}
+      {items.length === 0 ? (
+        <div className="glass">
+          <EmptyState
+            icon="M16 11a4 4 0 10-8 0 4 4 0 008 0zM3 21a9 9 0 0118 0"
+            title="No leads match the current filter"
+            description="Adjust your filters or run a new search to populate this list."
+            action={
+              <Link href="/searches" className="btn-primary">
+                New search →
+              </Link>
+            }
+          />
+        </div>
+      ) : (
+        <ul className="glass divide-y divide-white/60 overflow-hidden">
         {items.map((l) => {
           const score = l.score ?? l.scores[0]?.score ?? null;
           const rec = getPriorityRecommendation(l.priorityTier);
           return (
-            <li key={l.id} className="p-4 hover:bg-white/70">
+            <li key={l.id} className="p-5 transition hover:bg-white/70">
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -140,7 +163,8 @@ export default async function LeadsPage({
             </li>
           );
         })}
-      </ul>
+        </ul>
+      )}
 
       <Pagination page={page} pageSize={pageSize} total={total} baseHref={baseHref} />
     </div>

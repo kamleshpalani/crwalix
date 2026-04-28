@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
 import { Badge, priorityTone, statusTone, websiteTone } from '@/components/Badge';
+import PageHeader from '@/components/PageHeader';
+import EmptyState from '@/components/EmptyState';
 import { dashboardService } from '@/server/services/dashboard.service';
 
 export const dynamic = 'force-dynamic';
@@ -15,19 +17,13 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="glass-lg relative overflow-hidden p-8">
-        <div className="orb -right-10 -top-10 h-40 w-40 bg-brand-300/60" />
-        <div className="orb -bottom-12 right-32 h-32 w-32 bg-fuchsia-300/50" />
-        <div className="relative">
-          <span className="label">Workspace overview</span>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight text-ink-900">
-            Welcome back.
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-ink-600">
-            Find, score, and export high-priority local-business leads. Your
-            recent activity and top scored leads are below.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2">
+      <PageHeader
+        eyebrow="Workspace overview"
+        title="Welcome back."
+        icon="M3 12l9-9 9 9M5 10v10h14V10"
+        description="Find, score, and export high-priority local-business leads. Your recent activity and top scored leads are below."
+        actions={
+          <>
             <Link href="/searches" className="btn-primary">
               <span>New search</span>
               <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
@@ -35,9 +31,9 @@ export default async function DashboardPage() {
               </svg>
             </Link>
             <Link href="/leads" className="btn-ghost">View leads</Link>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <section className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Projects" value={stats.projects} href="/projects" />
@@ -98,7 +94,11 @@ export default async function DashboardPage() {
             </Link>
           </div>
           {stats.recentRuns.length === 0 ? (
-            <p className="mt-3 text-sm text-ink-500">No runs yet.</p>
+            <EmptyState
+              icon="M21 21l-4.3-4.3M11 18a7 7 0 110-14 7 7 0 010 14z"
+              title="No runs yet"
+              description="Launch a search to start collecting leads."
+            />
           ) : (
             <ul className="mt-3 divide-y divide-white/60 text-sm">
               {stats.recentRuns.map((r) => (
@@ -129,7 +129,11 @@ export default async function DashboardPage() {
             </Link>
           </div>
           {stats.topLeads.length === 0 ? (
-            <p className="mt-3 text-sm text-ink-500">No scored leads yet.</p>
+            <EmptyState
+              icon="M11 17l-5-5 5-5M6 12h12"
+              title="No scored leads yet"
+              description="Run a search and the highest-scoring leads will appear here."
+            />
           ) : (
             <ul className="mt-3 divide-y divide-white/60 text-sm">
               {stats.topLeads.map((l) => (
@@ -224,11 +228,14 @@ function Stat({
   return (
     <Link
       href={href}
-      className="glass group p-4 transition hover:-translate-y-0.5 hover:shadow-glass-lg"
+      className="glass group relative overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-glass-lg"
     >
-      <div className="text-[11px] font-medium uppercase tracking-wider text-ink-500">{label}</div>
-      <div className="mt-1 bg-gradient-to-br from-ink-900 to-ink-700 bg-clip-text text-3xl font-semibold tabular-nums text-transparent">
-        {value}
+      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br from-brand-300/30 to-fuchsia-300/30 opacity-0 blur-2xl transition-opacity group-hover:opacity-100" />
+      <div className="relative">
+        <div className="text-[11px] font-medium uppercase tracking-wider text-ink-500">{label}</div>
+        <div className="mt-1 bg-gradient-to-br from-brand-600 via-ink-900 to-fuchsia-600 bg-clip-text text-3xl font-bold tabular-nums text-transparent">
+          {value}
+        </div>
       </div>
     </Link>
   );

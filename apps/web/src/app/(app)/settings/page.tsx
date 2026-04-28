@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
 import NoOrgBanner from '@/components/NoOrgBanner';
+import PageHeader from '@/components/PageHeader';
 import { providersService } from '@/server/services/providers.service';
 import { outreachService, suppressionService } from '@/server/services/outreach.service';
 import { listExternalProviders } from '@crawlix/providers';
@@ -67,20 +68,22 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="mt-1 text-sm text-ink-600">
-          Configure providers, accept Terms, and review compliance settings.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Configuration"
+        title="Settings"
+        icon="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4.9a7 7 0 00-2-1.2L14 3h-4l-.5 2.5a7 7 0 00-2 1.2L5 5.8 3 9.2l2 1.6A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-.9a7 7 0 002 1.2L10 21h4l.5-2.5a7 7 0 002-1.2l2.4.9 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"
+        description="Configure providers, accept Terms, and review compliance settings."
+      />
 
-      <section>
-        <h2 className="text-lg font-medium">Search providers</h2>
-        <p className="mt-1 text-sm text-ink-500">
-          API keys are read from worker environment variables. You must accept
-          each provider&apos;s Terms before searches against that provider can run.
-        </p>
-        <ul className="mt-4 space-y-3">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink-900">Search providers</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            API keys are read from worker environment variables. You must accept
+            each provider&apos;s Terms before searches against that provider can run.
+          </p>
+        </div>
+        <ul className="space-y-3">
           {KNOWN_PROVIDERS.map((p) => {
             const cfg = byProvider.get(p.id);
             return (
@@ -111,13 +114,15 @@ export default async function SettingsPage() {
         </ul>
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium">Outreach compliance</h2>
-        <p className="mt-1 text-sm text-ink-500">
-          Required for any outreach feature. Crawlix will refuse to send email
-          on your behalf until these are filled in.
-        </p>
-        <div className="mt-4 glass p-4">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink-900">Outreach compliance</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            Required for any outreach feature. Crawlix will refuse to send email
+            on your behalf until these are filled in.
+          </p>
+        </div>
+        <div className="glass p-5">
           <OutreachSettingsForm
             initial={outreach}
             missing={compliance.missing}
@@ -126,13 +131,15 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium">Notifications</h2>
-        <p className="mt-1 text-sm text-ink-500">
-          Where to deliver alerts when scheduled searches discover new businesses.
-          The dashboard bell always shows them; webhook + email are optional add-ons.
-        </p>
-        <div className="mt-4 glass p-4">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink-900">Notifications</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            Where to deliver alerts when scheduled searches discover new businesses.
+            The dashboard bell always shows them; webhook + email are optional add-ons.
+          </p>
+        </div>
+        <div className="glass p-5">
           <NotificationPrefsForm
             initialWebhookUrl={orgPrefs?.notificationWebhookUrl ?? ''}
             initialEmail={orgPrefs?.notificationEmail ?? ''}
@@ -140,13 +147,15 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium">Scoring rules</h2>
-        <p className="mt-1 text-sm text-ink-500">
-          The default ruleset (v1.0.0) is currently active. Edit{' '}
-          <code>packages/scoring/src/rules/default.ts</code> to customize.
-        </p>
-        <ul className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink-900">Scoring rules</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            The default ruleset (v1.0.0) is currently active. Edit{' '}
+            <code className="rounded bg-ink-100/70 px-1 py-0.5 font-mono text-xs">packages/scoring/src/rules/default.ts</code> to customize.
+          </p>
+        </div>
+        <ul className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {[
             ['missing_website', 'Up to +45 for confirmed no website'],
             ['business_status', '−60 if permanently closed'],
@@ -156,25 +165,27 @@ export default async function SettingsPage() {
           ].map(([k, v]) => (
             <li
               key={k}
-              className="flex items-center justify-between rounded bg-white/40 px-3 py-2"
+              className="flex items-center justify-between rounded-xl border border-white/60 bg-white/60 px-4 py-3 backdrop-blur"
             >
-              <span className="font-mono text-xs text-ink-700">{k}</span>
+              <span className="font-mono text-xs font-semibold text-brand-700">{k}</span>
               <span className="text-xs text-ink-600">{v}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-ink-500">
+        <p className="text-xs text-ink-500">
           Tier thresholds: HIGH ≥ 80, MEDIUM ≥ 60, otherwise LOW.
         </p>
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium">External enrichment APIs</h2>
-        <p className="mt-1 text-xs text-ink-500">
-          Optional paid integrations. Each is feature-flagged on its environment variable —
-          missing keys silently disable the feature, the rest of the app keeps working.
-        </p>
-        <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-white/60 text-sm">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink-900">External enrichment APIs</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            Optional paid integrations. Each is feature-flagged on its environment variable —
+            missing keys silently disable the feature, the rest of the app keeps working.
+          </p>
+        </div>
+        <ul className="glass divide-y divide-white/60 overflow-hidden text-sm">
           {listExternalProviders().map((p) => (
             <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
@@ -202,18 +213,18 @@ export default async function SettingsPage() {
         </ul>
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium">Organization</h2>
-        <ul className="mt-3 glass text-sm">
-          <li className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-ink-900">Organization</h2>
+        <ul className="glass overflow-hidden text-sm">
+          <li className="flex items-center justify-between border-b border-white/60 px-5 py-3.5">
             <span className="text-ink-500">Internal organization id</span>
-            <span className="font-mono text-xs">{ctx.orgId}</span>
+            <span className="font-mono text-xs text-ink-700">{ctx.orgId}</span>
           </li>
-          <li className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <li className="flex items-center justify-between border-b border-white/60 px-5 py-3.5">
             <span className="text-ink-500">Clerk org id</span>
-            <span className="font-mono text-xs">{ctx.clerkOrgId}</span>
+            <span className="font-mono text-xs text-ink-700">{ctx.clerkOrgId}</span>
           </li>
-          <li className="flex items-center justify-between px-4 py-3">
+          <li className="flex items-center justify-between px-5 py-3.5">
             <span className="text-ink-500">Members</span>
             <Link href="#" className="text-xs text-ink-500">
               Manage in Clerk header switcher
