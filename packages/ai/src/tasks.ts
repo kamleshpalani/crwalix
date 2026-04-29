@@ -589,3 +589,138 @@ export async function parseSearchQuery(args: {
 
   return { ...spec, usage: result.usage };
 }
+
+// =============================================================================
+// support.answer — RAG-style support agent
+// =============================================================================
+
+export interface SupportAgentArticle {
+  id: string;
+  title: string;
+  content: string;
+  /** Optional similarity score 0..1 the caller already computed. */
+  score?: number;
+}
+
+export interface SupportAgentArgs {
+  organizationId: string;
+  question: string;
+  /** Top-K articles, already ranked by the caller (highest first). */
+  articles: SupportAgentArticle[];
+  /** Optional prior turns for multi-turn threads. */
+  history?: { role: "USER" | "AI" | "AGENT"; content: string }[];
+  /** Caller-supplied org pitch / brand voice hint. */
+  brandVoice?: string;
+}
+
+export interface SupportAgentReply {
+  answer: string;
+  /** 0..1 — model self-rated. <0.6 should set needsHandoff true. */
+  confidence: number;
+  needsHandoff: boolean;
+  citedArticleIds: string[];
+  usage: AiCompleteResult["usage"];
+}
+
+const SUPPORT_SYS_PROMPT = `You are a customer support assistant. Use ONLY the
+provided knowledge base snippets to answer. If the snippets do not cover the
+question, set needsHandoff=true and reply with a short message asking the user
+to wait for a teammate.
+
+Output STRICT JSON matching this shape, with no prose outside the JSON:
+{
+  "answer": "string, friendly, <= 4 short paragraphs",
+  "confidence": number between 0 and 1,
+  "needsHandoff": boolean,
+  "citedArticleIds": ["id of every snippet you actually used"]
+}
+
+Rules:
+- If confidence < 0.6, set needsHandoff = true.
+- Never invent product features, prices, or policies.
+- Cite every snippet you relied on.
+- Keep the tone calm and concise.`;
+
+function clamp01(n: unknown): number {
+  const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+export async function answerSupportQuestion(
+  args: SupportAgentArgs,
+): Promise<SupportAgentReply> {
+  const ctxBlocks = args.articles
+    .slice(0, 5)
+    .map(
+      (a, i) =>
+        `[#${i + 1} id=${a.id}] ${a.title}\n${a.content.slice(0, 1500)}`,
+    )
+    .join("\n\n---\n\n");
+
+  const historyText = (args.history ?? [])
+    .slice(-6)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+
+  const userMsg = [
+    args.brandVoice ? `Brand voice: ${args.brandVoice}` : "",
+    "Knowledge base snippets:",
+    ctxBlocks || "(none — knowledge base empty)",
+    historyText ? `\nConversation so far:\n${historyText}` : "",
+    `\nUser question:\n${args.question}`,
+    "\nReturn JSON only.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const result = await aiComplete({
+    taskKind: "support.answer",
+    organizationId: args.organizationId,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: SUPPORT_SYS_PROMPT },
+      { role: "user", content: userMsg },
+    ],
+  });
+
+  let parsed: {
+    answer?: unknown;
+    confidence?: unknown;
+    needsHandoff?: unknown;
+    citedArticleIds?: unknown;
+  } = {};
+  try {
+    const text = result.text.trim();
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    parsed =
+      jsonStart >= 0 && jsonEnd > jsonStart
+        ? JSON.parse(text.slice(jsonStart, jsonEnd + 1))
+        : {};
+  } catch {
+    parsed = {};
+  }
+
+  const answer =
+    typeof parsed.answer === "string" && parsed.answer.trim().length > 0
+      ? parsed.answer.trim()
+      : "I'm not sure yet — let me hand this to a teammate.";
+  const confidence = clamp01(parsed.confidence);
+  const needsHandoff =
+    confidence < 0.6 ||
+    parsed.needsHandoff === true ||
+    args.articles.length === 0;
+  const citedArticleIds = Array.isArray(parsed.citedArticleIds)
+    ? parsed.citedArticleIds
+        .filter((x): x is string => typeof x === "string")
+        .slice(0, 10)
+    : [];
+
+  return {
+    answer,
+    confidence,
+    needsHandoff,
+    citedArticleIds,
+    usage: result.usage,
+  };
+}

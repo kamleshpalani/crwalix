@@ -1225,3 +1225,68 @@ model CostBudget {
   @@index([organizationId])
 }
 
+// =============================================================================
+// Support inbox + KB — Phase 4.4 / 4.5
+// FK + RLS in 0021_support.sql.
+// =============================================================================
+
+/// Customer-facing knowledge base article. Embeddings cached as Float[] so we
+/// can do in-memory cosine similarity without requiring pgvector.
+model KnowledgeArticle {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  content        String
+  sourceUrl      String?
+  /// 1536-dim text-embedding-3-small vector. Empty until ingest finishes.
+  embedding      Float[]  @default([])
+  /// Free-form tags for filtering inside the support agent context window.
+  tags           String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, updatedAt])
+}
+
+/// Inbound or outbound support thread. One ticket per customer issue.
+model SupportTicket {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Optional originating lead. Customers without lead records get null.
+  leadId         String?
+  subject        String
+  /// OPEN | PENDING | RESOLVED | CLOSED. Plain text — no enum migration needed.
+  status         String   @default("OPEN")
+  /// Channel hint: email | portal | manual.
+  channel        String   @default("manual")
+  /// Optional human assignee for handoff workflows.
+  assignedUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  messages       SupportMessage[]
+
+  @@index([organizationId, status, updatedAt])
+  @@index([organizationId, leadId])
+}
+
+/// One row per turn in a support thread. Authored by the user, the AI agent,
+/// or a human teammate.
+model SupportMessage {
+  id             String   @id @default(uuid())
+  organizationId String
+  ticketId       String
+  /// USER | AI | AGENT
+  role           String
+  content        String
+  /// AI confidence 0..1; null for human messages.
+  confidence     Float?
+  /// IDs of KnowledgeArticle rows the AI cited; empty for non-AI rows.
+  citedArticleIds String[] @default([])
+  /// True when the AI judged itself unfit and asked for a human.
+  needsHandoff   Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticketId, createdAt])
+}
+
