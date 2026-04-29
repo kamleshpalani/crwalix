@@ -1356,3 +1356,59 @@ model QuoteLineItem {
   @@index([organizationId, quoteId, position])
 }
 
+// =============================================================================
+// Contracts — Module #11. FK + RLS in 0023_contracts.sql.
+// Lightweight in-app e-sign: customer types name + clicks Accept on a public
+// share link; we capture name, IP, user-agent, timestamp, and a SHA-256 hash
+// of the body at signing time as tamper-evidence.
+// =============================================================================
+
+enum ContractStatus {
+  DRAFT
+  SENT
+  SIGNED
+  DECLINED
+  CANCELED
+  EXPIRED
+}
+
+model Contract {
+  id             String         @id @default(uuid())
+  organizationId String
+  /// Optional CRM context.
+  dealId         String?
+  leadId         String?
+  projectId      String?
+  quoteId        String?
+  /// Org-scoped sequential e.g. C-0042.
+  number         String?
+  title          String
+  status         ContractStatus @default(DRAFT)
+  /// Markdown or HTML body. Server-side stored verbatim — what was rendered
+  /// to the customer at sign-time is locked once SIGNED.
+  bodyMarkdown   String
+  /// Counterparty contact for routing the share link.
+  counterpartyName  String?
+  counterpartyEmail String?
+  /// Public share token for the customer-facing page.
+  shareToken     String?        @unique
+  /// SHA-256 of bodyMarkdown captured at the moment of signing. Empty until
+  /// SIGNED. Used as a simple tamper-evidence check.
+  bodyHashAtSign String?
+  /// Typed name from the customer. Locked once SIGNED.
+  signedName     String?
+  signedAt       DateTime?
+  signedIp       String?
+  signedUserAgent String?
+  declinedAt     DateTime?
+  expiresAt      DateTime?
+  sentAt         DateTime?
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
