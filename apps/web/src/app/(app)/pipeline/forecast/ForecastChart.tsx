@@ -63,8 +63,7 @@ export default function ForecastChart({ buckets }: Props) {
 
   if (buckets.length === 0) return null;
 
-  const fmt = (c: number) =>
-    `$${Math.round(c / 100).toLocaleString()}`;
+  const fmt = (c: number) => `$${Math.round(c / 100).toLocaleString()}`;
 
   return (
     <svg
