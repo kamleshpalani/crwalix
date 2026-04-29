@@ -623,3 +623,139 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
 }
+
+// =============================================================================
+// CRM — Pipelines, Deals, Activities, Proposals (Phase 1)
+// FK constraints + RLS policies are added in
+// packages/db/migrations/0011_crm_pipeline.sql.
+// Models are intentionally self-contained (no @relation blocks to existing
+// models) so this migration can land without modifying the legacy schema.
+// =============================================================================
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum ActivityKind {
+  NOTE
+  EMAIL_OUT
+  EMAIL_IN
+  CALL
+  TASK
+  STAGE_CHANGE
+  SYSTEM
+}
+
+enum ProposalStatus {
+  DRAFT
+  READY
+  SENT
+  VIEWED
+  ACCEPTED
+  DECLINED
+}
+
+model Pipeline {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@unique([organizationId, name])
+}
+
+model PipelineStage {
+  id          String   @id @default(uuid())
+  organizationId String
+  pipelineId  String
+  name        String
+  /// 0-based ordering within the pipeline (DISCOVERY=0, PROPOSAL=1, …).
+  position    Int
+  /// Sales-stage probability 0–100 used for forecasting.
+  probability Int      @default(20)
+  /// Marks the stage as a terminal "won" or "lost" state.
+  isWon       Boolean  @default(false)
+  isLost      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([organizationId, pipelineId, position])
+  @@unique([pipelineId, position])
+}
+
+model Deal {
+  id             String     @id @default(uuid())
+  organizationId String
+  pipelineId     String
+  stageId        String
+  /// Optional originating lead. Nullable so deals can be created manually.
+  leadId         String?
+  title          String
+  amountCents    Int        @default(0)
+  currency       String     @default("USD")
+  status         DealStatus @default(OPEN)
+  ownerUserId    String?
+  expectedCloseAt DateTime?
+  closedAt       DateTime?
+  metadata       Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([organizationId, stageId])
+  @@index([organizationId, leadId])
+  @@index([organizationId, status])
+}
+
+model Activity {
+  id             String       @id @default(uuid())
+  organizationId String
+  /// Always set — every activity belongs to a deal context.
+  dealId         String
+  /// Optional secondary link to the underlying lead.
+  leadId         String?
+  /// Author user; null for system-generated activities.
+  userId         String?
+  kind           ActivityKind
+  /// Human-readable summary; full body lives in metadata for richer kinds.
+  summary        String
+  metadata       Json?
+  occurredAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, dealId, occurredAt])
+  @@index([organizationId, leadId, occurredAt])
+}
+
+model Proposal {
+  id             String         @id @default(uuid())
+  organizationId String
+  dealId         String
+  leadId         String?
+  version        Int            @default(1)
+  status         ProposalStatus @default(DRAFT)
+  /// Rendered HTML body produced by the AI generator.
+  bodyHtml       String
+  /// Optional public share token. Hosted page reads via this.
+  shareToken     String?        @unique
+  /// AI provenance — useful for cost reports and quality audits.
+  aiProvider     String?
+  aiModel        String?
+  aiPromptTokens Int?
+  aiCompletionTokens Int?
+  aiCostUsd      Decimal?       @db.Decimal(10, 6)
+  generatedById  String?
+  sentAt         DateTime?
+  viewedAt       DateTime?
+  acceptedAt     DateTime?
+  declinedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId, dealId])
+  @@index([organizationId, status])
+}
+
