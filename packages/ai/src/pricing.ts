@@ -34,6 +34,7 @@ export const TASK_DEFAULTS: Record<
   "outreach.email": { provider: "openai", model: "gpt-4o-mini" },
   "report.weekly": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
   "support.answer": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+  "search.parse": { provider: "openai", model: "gpt-4o-mini" },
 };
 
 export function buildUsage(

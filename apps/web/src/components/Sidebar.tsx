@@ -11,6 +11,11 @@ const items: { href: string; label: string; icon: string }[] = [
     icon: "M3 12l9-9 9 9M5 10v10h14V10",
   },
   {
+    href: "/search",
+    label: "Ask AI",
+    icon: "M9 11a4 4 0 118 0 4 4 0 01-8 0zM21 21l-4.3-4.3",
+  },
+  {
     href: "/projects",
     label: "Projects",
     icon: "M3 7l9-4 9 4-9 4-9-4zm0 5l9 4 9-4M3 17l9 4 9-4",

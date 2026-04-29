@@ -364,3 +364,228 @@ export async function generateWeeklyDigest(
     model: result.model,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 4.6 — natural-language search query parser.
+//
+// Converts a free-text query (e.g. "high priority leads in Texas with no
+// website created last week") into a strongly-typed filter spec that the
+// app can run against Prisma. Constrained to a small enum so the LLM
+// can't invent fields that don't exist.
+// ─────────────────────────────────────────────────────────────────────
+
+export type SearchEntity = "leads" | "deals" | "projects";
+
+export interface NlLeadFilter {
+  status?: string[]; // LeadStatus values
+  priorityTier?: ("LOW" | "MEDIUM" | "HIGH")[];
+  city?: string[];
+  state?: string[];
+  country?: string[];
+  hasWebsite?: boolean; // true = website present, false = missing
+  scoreGte?: number; // 0..100
+  createdWithinDays?: number; // 1..365
+  search?: string; // text search on name
+}
+
+export interface NlDealFilter {
+  status?: ("OPEN" | "WON" | "LOST")[];
+  amountGteCents?: number;
+  amountLteCents?: number;
+  createdWithinDays?: number;
+  expectedCloseWithinDays?: number;
+  search?: string; // text on title
+}
+
+export interface NlProjectFilter {
+  status?: string[]; // PLANNING|ACTIVE|PAUSED|COMPLETED|ARCHIVED
+  createdWithinDays?: number;
+  search?: string;
+}
+
+export interface NlSearchSpec {
+  entities: SearchEntity[];
+  leads?: NlLeadFilter;
+  deals?: NlDealFilter;
+  projects?: NlProjectFilter;
+  /** Brief explanation of how the query was interpreted, shown in UI. */
+  interpretation: string;
+}
+
+const NL_SEARCH_SYSTEM = `You convert short natural-language queries about a CRM into a JSON filter spec.
+
+Return ONLY JSON matching this TypeScript type:
+{
+  "entities": ("leads" | "deals" | "projects")[],
+  "leads"?: {
+    "status"?: string[],          // any of: NEW VERIFIED CONTACTED INTERESTED FOLLOW_UP NOT_INTERESTED CONVERTED CLOSED
+    "priorityTier"?: ("LOW"|"MEDIUM"|"HIGH")[],
+    "city"?: string[], "state"?: string[], "country"?: string[],
+    "hasWebsite"?: boolean,
+    "scoreGte"?: number,          // 0..100
+    "createdWithinDays"?: number, // 1..365
+    "search"?: string             // free-text on name
+  },
+  "deals"?: {
+    "status"?: ("OPEN"|"WON"|"LOST")[],
+    "amountGteCents"?: number,
+    "amountLteCents"?: number,
+    "createdWithinDays"?: number,
+    "expectedCloseWithinDays"?: number,
+    "search"?: string             // free-text on title
+  },
+  "projects"?: {
+    "status"?: string[],          // PLANNING ACTIVE PAUSED COMPLETED ARCHIVED
+    "createdWithinDays"?: number,
+    "search"?: string
+  },
+  "interpretation": string         // ≤120 chars, plain English
+}
+
+Rules:
+- If unsure which entity, default to ["leads"].
+- Convert money phrases to cents ($5k → 500000, $10k+ → amountGteCents 1000000).
+- "this week" → 7 days, "this month" → 30 days, "this quarter" → 90 days.
+- Map natural status words ("hot lead" → priorityTier ["HIGH"], "won deals" → status ["WON"]).
+- Never invent fields. If something has no representation, drop it from the spec.
+- Output JSON only, no prose, no markdown fences.`;
+
+function parseNlSearchJson(text: string): {
+  entities?: unknown;
+  leads?: unknown;
+  deals?: unknown;
+  projects?: unknown;
+  interpretation?: unknown;
+} {
+  const match = text.match(/\{[\s\S]*\}/);
+  const raw = match ? match[0] : text;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function clampDays(n: unknown): number | undefined {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return undefined;
+  return Math.max(1, Math.min(365, Math.round(v)));
+}
+
+function clampScore(n: unknown): number | undefined {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return undefined;
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+function sanitizeStringArray(v: unknown, max = 10): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const arr = v
+    .filter((x): x is string => typeof x === "string" && x.length > 0)
+    .slice(0, max)
+    .map((s) => s.slice(0, 80));
+  return arr.length === 0 ? undefined : arr;
+}
+
+const VALID_ENTITIES: ReadonlyArray<SearchEntity> = [
+  "leads",
+  "deals",
+  "projects",
+];
+const VALID_DEAL_STATUS = new Set(["OPEN", "WON", "LOST"]);
+const VALID_TIER = new Set(["LOW", "MEDIUM", "HIGH"]);
+
+export async function parseSearchQuery(args: {
+  organizationId: string;
+  query: string;
+}): Promise<NlSearchSpec & { usage: AiCompleteResult["usage"] }> {
+  const result = await aiComplete({
+    taskKind: "search.parse",
+    organizationId: args.organizationId,
+    temperature: 0,
+    maxTokens: 400,
+    jsonMode: true,
+    messages: [
+      { role: "system", content: NL_SEARCH_SYSTEM },
+      { role: "user", content: args.query.slice(0, 500) },
+    ],
+  });
+
+  const raw = parseNlSearchJson(result.text);
+  const entities =
+    Array.isArray(raw.entities) && raw.entities.length > 0
+      ? (raw.entities.filter(
+          (e: unknown): e is SearchEntity =>
+            typeof e === "string" && VALID_ENTITIES.includes(e as SearchEntity),
+        ) as SearchEntity[])
+      : (["leads"] as SearchEntity[]);
+
+  const spec: NlSearchSpec = {
+    entities: entities.length > 0 ? entities : ["leads"],
+    interpretation:
+      typeof raw.interpretation === "string"
+        ? raw.interpretation.slice(0, 200)
+        : "Searching with default filters.",
+  };
+
+  if (raw.leads && typeof raw.leads === "object") {
+    const l = raw.leads as Record<string, unknown>;
+    spec.leads = {
+      status: sanitizeStringArray(l.status),
+      priorityTier: (sanitizeStringArray(l.priorityTier) ?? []).filter((s) =>
+        VALID_TIER.has(s),
+      ) as ("LOW" | "MEDIUM" | "HIGH")[] | undefined,
+      city: sanitizeStringArray(l.city, 5),
+      state: sanitizeStringArray(l.state, 5),
+      country: sanitizeStringArray(l.country, 5),
+      hasWebsite: typeof l.hasWebsite === "boolean" ? l.hasWebsite : undefined,
+      scoreGte: clampScore(l.scoreGte),
+      createdWithinDays: clampDays(l.createdWithinDays),
+      search:
+        typeof l.search === "string" && l.search.length > 0
+          ? l.search.slice(0, 100)
+          : undefined,
+    };
+    if (spec.leads.priorityTier && spec.leads.priorityTier.length === 0) {
+      spec.leads.priorityTier = undefined;
+    }
+  }
+
+  if (raw.deals && typeof raw.deals === "object") {
+    const d = raw.deals as Record<string, unknown>;
+    const status = (sanitizeStringArray(d.status) ?? []).filter((s) =>
+      VALID_DEAL_STATUS.has(s),
+    ) as ("OPEN" | "WON" | "LOST")[];
+    spec.deals = {
+      status: status.length > 0 ? status : undefined,
+      amountGteCents:
+        typeof d.amountGteCents === "number" && d.amountGteCents >= 0
+          ? Math.round(d.amountGteCents)
+          : undefined,
+      amountLteCents:
+        typeof d.amountLteCents === "number" && d.amountLteCents >= 0
+          ? Math.round(d.amountLteCents)
+          : undefined,
+      createdWithinDays: clampDays(d.createdWithinDays),
+      expectedCloseWithinDays: clampDays(d.expectedCloseWithinDays),
+      search:
+        typeof d.search === "string" && d.search.length > 0
+          ? d.search.slice(0, 100)
+          : undefined,
+    };
+  }
+
+  if (raw.projects && typeof raw.projects === "object") {
+    const p = raw.projects as Record<string, unknown>;
+    spec.projects = {
+      status: sanitizeStringArray(p.status),
+      createdWithinDays: clampDays(p.createdWithinDays),
+      search:
+        typeof p.search === "string" && p.search.length > 0
+          ? p.search.slice(0, 100)
+          : undefined,
+    };
+  }
+
+  return { ...spec, usage: result.usage };
+}
