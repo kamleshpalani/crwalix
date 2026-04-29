@@ -324,6 +324,18 @@ async function upsertLead(
         where: { id: target.id },
         data: buildMergeData(target, r)
       });
+      // Audit trail (Section 7.4: maintain merge history).
+      await tx.leadMergeHistory.create({
+        data: {
+          organizationId,
+          canonicalLeadId: target.id,
+          reason: match.reason,
+          confidence: match.confidence,
+          fromProvider: r.provider,
+          fromExternalId: r.externalPlaceId,
+          payload: r as unknown as Prisma.InputJsonValue,
+        },
+      });
       return { lead: merged, created: false, merged: true, skipped: false };
     }
   }
@@ -348,6 +360,10 @@ async function upsertLead(
       categories: r.categories,
       phone: r.phone,
       phoneNormalized: digitsOnly(r.phone) || null,
+      email: r.email ?? null,
+      emailNormalized: r.email ? r.email.toLowerCase().trim() : null,
+      googlePlaceId: r.provider === 'google_places' ? r.externalPlaceId : null,
+      yelpBusinessId: r.provider === 'yelp_fusion' ? r.externalPlaceId : null,
       website: r.website,
       websiteStatus: r.website ? WebsiteStatus.EXISTS : WebsiteStatus.UNKNOWN,
       sourceUrl: r.sourceUrl,

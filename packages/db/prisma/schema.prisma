@@ -474,6 +474,20 @@ model Lead {
   businessScaleConfidence Int?
   /// Contributing signals + raw bucket scores from the classifier.
   businessScaleSignals Json?
+  /// User-facing industry (free-form, distinct from auto-derived categories).
+  industry          String?
+  /// Operating hours payload (provider-specific JSON, normalized when possible).
+  openingHours      Json?
+  /// User this lead is assigned to (sales rep). FK to internal User.id, nullable.
+  assignedUserId    String?
+  /// CRM pipeline stage on the lead itself (independent of any Deal).
+  crmStage          String?
+  /// 0–100 multi-channel digital presence score (website + social + reviews).
+  digitalPresenceScore Int?
+  /// Convenience copy of Google Place ID when provider=google_places.
+  googlePlaceId     String?
+  /// Convenience copy of Yelp business ID when provider=yelp_fusion.
+  yelpBusinessId    String?
   status            LeadStatus     @default(NEW)
   notes             String?
   tags              String[]       @default([])
@@ -488,12 +502,43 @@ model Lead {
   enrichments       Enrichment[]
   scores            LeadScore[]
   listMemberships   LeadListItem[]
+  mergeHistoryAsCanonical LeadMergeHistory[] @relation("LeadMergeCanonical")
 
   @@unique([organizationId, provider, externalPlaceId])
   @@index([organizationId, nameNormalized])
   @@index([organizationId, phoneNormalized])
   @@index([organizationId, websiteStatus])
   @@index([organizationId, priorityTier, score])
+  @@index([organizationId, emailNormalized])
+  @@index([organizationId, assignedUserId])
+  @@index([organizationId, crmStage])
+  @@index([organizationId, googlePlaceId])
+  @@index([organizationId, yelpBusinessId])
+}
+
+/// Audit trail of cross-provider lead merges. One row per duplicate hit
+/// folded into a canonical lead. Lets us replay merges and prove the same
+/// physical business wasn't double-charged against the org's quota.
+model LeadMergeHistory {
+  id                String   @id @default(uuid())
+  organizationId    String
+  canonicalLeadId   String
+  /// Reason: 'exact' | 'phone' | 'website' | 'name_address' | 'name_geo' | 'email' | 'place_id' | 'manual'.
+  reason            String
+  /// 0..1 match confidence at merge time.
+  confidence        Float
+  /// Provider that produced the duplicate hit (google_places, yelp_fusion, ...).
+  fromProvider      String?
+  /// External place id from the duplicate hit, if any.
+  fromExternalId    String?
+  /// Snapshot of the incoming normalized lead payload.
+  payload           Json?
+  createdAt         DateTime @default(now())
+
+  canonical         Lead     @relation("LeadMergeCanonical", fields: [canonicalLeadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, canonicalLeadId])
+  @@index([canonicalLeadId, createdAt])
 }
 
 model LeadSource {
