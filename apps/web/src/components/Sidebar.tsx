@@ -61,6 +61,11 @@ const items: { href: string; label: string; icon: string }[] = [
     icon: "M3 12h3m12 0h3M12 3v3m0 12v3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6l2.1-2.1M12 8a4 4 0 100 8 4 4 0 000-8z",
   },
   {
+    href: "/enrichments",
+    label: "Enrichment",
+    icon: "M19 11a7 7 0 11-14 0 7 7 0 0114 0zM12 4v3m0 8v3m4-7h3m-14 0h3",
+  },
+  {
     href: "/notifications",
     label: "Notifications",
     icon: "M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0",

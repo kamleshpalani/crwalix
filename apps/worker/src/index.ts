@@ -25,6 +25,7 @@ import { logger } from "./lib/logger";
 import { runSearchIngest } from "./pipelines/search-ingest";
 import { runScoreLead } from "./pipelines/score-lead";
 import { runWebsiteEnrichment } from "./pipelines/enrich-website";
+import { runStubEnrichment } from "./pipelines/enrich-stub";
 import { runIntelBuild } from "./pipelines/intel-build";
 import { runComplianceCleanup } from "./pipelines/compliance-cleanup";
 import { runGenerateProposal } from "./pipelines/generate-proposal";
@@ -80,6 +81,14 @@ const enrichmentWorker = makeWorker<EnrichmentJob | IntelBuildJob>(
   async (name, data) => {
     if (name === JobName.ENRICH_WEBSITE)
       return runWebsiteEnrichment(data as EnrichmentJob);
+    if (
+      name === JobName.ENRICH_EMAIL ||
+      name === JobName.ENRICH_EMAIL_VERIFY ||
+      name === JobName.ENRICH_SOCIAL ||
+      name === JobName.ENRICH_COMPANY ||
+      name === JobName.ENRICH_CONTACT
+    )
+      return runStubEnrichment(data as EnrichmentJob);
     if (name === JobName.INTEL_BUILD)
       return runIntelBuild(data as IntelBuildJob);
     logger.warn({ name }, "unknown enrichment job");
