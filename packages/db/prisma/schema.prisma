@@ -1160,6 +1160,12 @@ model Invoice {
   hostedUrl            String?
   /// PDF download URL from Stripe or self-generated.
   pdfUrl               String?
+  /// Module #14 — self-hosted invoice fields (set when created in-app, not via Stripe).
+  title                String?
+  customerName         String?
+  customerEmail        String?
+  /// Public share token for self-hosted invoice viewing/payment page.
+  shareToken           String?       @unique
   metadata             Json?
   createdById          String?
   createdAt            DateTime      @default(now())
