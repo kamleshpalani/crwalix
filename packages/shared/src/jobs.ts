@@ -21,6 +21,9 @@ export const JobName = {
   PROVIDER_HEALTH: "system.providerHealth",
   LEAD_PURGE: "system.leadPurge",
   CRM_GENERATE_PROPOSAL: "crm.generateProposal",
+  OUTREACH_SEND: "outreach.send",
+  OUTREACH_SEQUENCE_TICK: "outreach.sequenceTick",
+  OUTREACH_CLASSIFY_REPLY: "outreach.classifyReply",
 } as const;
 export type JobName = (typeof JobName)[keyof typeof JobName];
 
@@ -32,6 +35,7 @@ export const QueueName = {
   EXPORT: "export",
   SYSTEM: "system",
   CRM: "crm",
+  OUTREACH: "outreach",
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -141,4 +145,51 @@ export interface GenerateProposalJob {
   offering?: string;
   /** Userid that triggered the generation; recorded on the Proposal row. */
   triggeredByUserId?: string;
+}
+
+/**
+ * Single outbound email send. Either `messageId` (replay an existing
+ * OutreachMessage row) or a fresh `payload` block (compose + persist on
+ * dispatch). Ad-hoc one-off sends use `payload`; sequence ticks use it too,
+ * passing the resolved step content.
+ */
+export interface OutreachSendJob {
+  organizationId: string;
+  /** Recipient email — required for both modes. */
+  toEmail: string;
+  /** Optional CRM joins, persisted on the OutreachMessage row. */
+  leadId?: string;
+  dealId?: string;
+  /** Set when the send originated from a SequenceRun step. */
+  sequenceRunId?: string;
+  /** Pre-resolved subject + body (after template rendering). */
+  subject: string;
+  body: string;
+  bodyIsHtml?: boolean;
+  /** Optional From override; otherwise OutreachSettings.senderEmail wins. */
+  fromEmail?: string;
+  replyToEmail?: string;
+  /** Variable bag for last-mile template substitution. */
+  vars?: Record<string, unknown>;
+}
+
+/**
+ * Advances a SequenceRun by one step. Idempotent: the worker re-reads the
+ * row, picks the step at `currentStepIndex`, dispatches an OUTREACH_SEND
+ * job, increments the index, and either schedules the next tick or marks
+ * the run COMPLETED.
+ */
+export interface OutreachSequenceTickJob {
+  organizationId: string;
+  sequenceRunId: string;
+}
+
+/**
+ * Classify the body of an inbound reply (interested / not / OOO / question)
+ * via the AI router and stamp the result onto `InboundMessage`. The worker
+ * also auto-advances the linked Deal stage based on the verdict.
+ */
+export interface OutreachClassifyReplyJob {
+  organizationId: string;
+  inboundMessageId: string;
 }

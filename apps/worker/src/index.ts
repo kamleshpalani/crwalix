@@ -14,6 +14,9 @@ import {
   type EnrichmentJob,
   type GenerateProposalJob,
   type IntelBuildJob,
+  type OutreachClassifyReplyJob,
+  type OutreachSendJob,
+  type OutreachSequenceTickJob,
   type ScoreLeadJob,
   type SearchIngestJob,
 } from "@crawlix/shared";
@@ -25,6 +28,10 @@ import { runWebsiteEnrichment } from "./pipelines/enrich-website";
 import { runIntelBuild } from "./pipelines/intel-build";
 import { runComplianceCleanup } from "./pipelines/compliance-cleanup";
 import { runGenerateProposal } from "./pipelines/generate-proposal";
+import { runOutreachSend } from "./pipelines/outreach-send";
+import { runOutreachSequenceTick } from "./pipelines/outreach-sequence-tick";
+import { runOutreachClassifyReply } from "./pipelines/outreach-classify-reply";
+import { runBillingDunning } from "./pipelines/billing-dunning";
 import { startScheduler } from "./pipelines/scheduler";
 
 const connection = getConnection();
@@ -89,6 +96,22 @@ const crmWorker = makeWorker<GenerateProposalJob>(
   2,
 );
 
+const outreachWorker = makeWorker<
+  OutreachSendJob | OutreachSequenceTickJob | OutreachClassifyReplyJob
+>(
+  QueueName.OUTREACH,
+  async (name, data) => {
+    if (name === JobName.OUTREACH_SEND)
+      return runOutreachSend(data as OutreachSendJob);
+    if (name === JobName.OUTREACH_SEQUENCE_TICK)
+      return runOutreachSequenceTick(data as OutreachSequenceTickJob);
+    if (name === JobName.OUTREACH_CLASSIFY_REPLY)
+      return runOutreachClassifyReply(data as OutreachClassifyReplyJob);
+    logger.warn({ name }, "unknown outreach job");
+  },
+  4,
+);
+
 async function shutdown(sig: string): Promise<void> {
   logger.info({ sig }, "shutting down");
   await Promise.all([
@@ -96,6 +119,7 @@ async function shutdown(sig: string): Promise<void> {
     scoringWorker.close(),
     enrichmentWorker.close(),
     crmWorker.close(),
+    outreachWorker.close(),
   ]);
   await connection.quit();
   process.exit(0);
@@ -112,6 +136,15 @@ const complianceTimer = setInterval(
   60 * 60 * 1000,
 );
 complianceTimer.unref();
+
+// Billing dunning: retry failed payments, escalate overdue invoices.
+// Runs on boot and every 24 hours thereafter.
+void runBillingDunning();
+const dunningTimer = setInterval(
+  () => void runBillingDunning(),
+  24 * 60 * 60 * 1000,
+);
+dunningTimer.unref();
 
 // Recurring-search scheduler: enqueues `search.ingest` for every Search
 // row whose `nextRunAt` has elapsed. Polls once per minute by default.

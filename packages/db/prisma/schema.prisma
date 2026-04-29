@@ -693,6 +693,38 @@ enum ProposalStatus {
   DECLINED
 }
 
+enum OutreachMessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  FAILED
+  SUPPRESSED
+}
+
+enum SequenceStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum SequenceRunStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+  REPLIED
+  BOUNCED
+  FAILED
+  STOPPED
+}
+
+enum SequenceStepChannel {
+  EMAIL
+}
+
 model Pipeline {
   id             String   @id @default(uuid())
   organizationId String
@@ -795,5 +827,309 @@ model Proposal {
 
   @@index([organizationId, dealId])
   @@index([organizationId, status])
+}
+
+/// Single outbound email send. One row per `sendOutreach()` call. Used for
+/// tracking opens / unsubscribes / bounces and for audit & deliverability.
+/// Subject + HTML body are persisted post-render so we can replay exactly
+/// what the recipient saw.
+model OutreachMessage {
+  id             String                @id @default(uuid())
+  organizationId String
+  /// Optional originating lead for CRM joins.
+  leadId         String?
+  /// Optional deal context (e.g. proposal follow-up).
+  dealId         String?
+  /// Optional sequence step that produced this send (Phase 1.6).
+  sequenceRunId  String?
+  /// Recipient email at send-time. Stored verbatim for audit; suppression
+  /// is keyed off the hashed form in `OutreachSuppression`.
+  toEmail        String
+  fromEmail      String
+  subject        String
+  bodyHtml       String
+  bodyText       String?
+  /// Provider message id (Resend / SES / SMTP). Used for inbound webhook joins.
+  providerId     String?
+  provider       String?
+  status         OutreachMessageStatus @default(QUEUED)
+  errorMessage   String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  openedAt       DateTime?
+  clickedAt      DateTime?
+  repliedAt      DateTime?
+  bouncedAt      DateTime?
+  unsubscribedAt DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, dealId, createdAt])
+  @@index([providerId])
+}
+
+/// Outreach cadence template: a named, ordered list of email steps.
+/// One row per template — runs are spawned in `SequenceRun`. Steps are
+/// keyed off `position`; `delayHours` is computed relative to the
+/// previous step's send time (0 means "send immediately on start").
+model Sequence {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  status         SequenceStatus @default(DRAFT)
+  /// Optional FROM override; falls back to OutreachSettings.senderEmail.
+  fromEmail      String?
+  /// Optional Reply-To override; falls back to OutreachSettings.replyToEmail.
+  replyToEmail   String?
+  /// Quiet-hours window expressed in 0-23 ints (org-local TZ on Organization).
+  /// When set, sends scheduled outside the window shift forward to the next
+  /// open slot. NULL = no quiet hours.
+  quietStartHour Int?
+  quietEndHour   Int?
+  /// IANA timezone name (e.g. "America/Los_Angeles") for quiet hours.
+  /// Defaults to "UTC" at runtime.
+  timezone       String?
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  steps          SequenceStep[]
+  runs           SequenceRun[]
+
+  @@index([organizationId, status])
+  @@unique([organizationId, name])
+}
+
+model SequenceStep {
+  id              String              @id @default(uuid())
+  organizationId  String
+  sequenceId      String
+  /// 0-based ordering. The first send always runs at position 0.
+  position        Int
+  channel         SequenceStepChannel @default(EMAIL)
+  /// Hours to wait after the prior step's send before dispatching this one.
+  /// `0` = send right after the prior step. The first step is always
+  /// dispatched immediately.
+  delayHours      Int                 @default(0)
+  subjectTemplate String
+  bodyTemplate    String
+  /// When true the body is treated as raw HTML; otherwise wrapped in <p>.
+  bodyIsHtml      Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  sequence        Sequence            @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, sequenceId, position])
+  @@unique([sequenceId, position])
+}
+
+/// Per-recipient instance of a Sequence. Created when a user starts
+/// outreach against a Lead/Deal. The worker advances `currentStepIndex`
+/// after each successful send and schedules the next tick with the
+/// configured delay.
+model SequenceRun {
+  id              String            @id @default(uuid())
+  organizationId  String
+  sequenceId      String
+  /// Recipient context — at least one of leadId / dealId is set.
+  leadId          String?
+  dealId          String?
+  toEmail         String
+  status          SequenceRunStatus @default(RUNNING)
+  /// 0-based pointer to the *next* step to dispatch.
+  currentStepIndex Int              @default(0)
+  startedAt       DateTime          @default(now())
+  lastSendAt      DateTime?
+  nextRunAt       DateTime?
+  completedAt    DateTime?
+  pausedAt        DateTime?
+  pauseReason     String?
+  /// Per-run variable bag (e.g. lead.firstName) for template rendering.
+  vars            Json?
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  sequence        Sequence          @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status, nextRunAt])
+  @@index([organizationId, leadId])
+  @@index([organizationId, dealId])
+}
+
+enum ReplyClassification {
+  INTERESTED
+  NOT_INTERESTED
+  OUT_OF_OFFICE
+  QUESTION
+  UNSUBSCRIBE
+  OTHER
+}
+
+/// Inbound email reply, captured from the Resend (or compatible) inbound
+/// webhook. Matched back to the originating OutreachMessage via
+/// `In-Reply-To` / `References` headers — when no match is found the row
+/// is still kept so we can debug missed threads.
+model InboundMessage {
+  id                  String              @id @default(uuid())
+  organizationId      String
+  /// Resolved at ingestion when we can match the thread.
+  outreachMessageId   String?
+  sequenceRunId       String?
+  leadId              String?
+  dealId              String?
+  /// Raw envelope info — useful for support and debugging.
+  fromEmail           String
+  fromName            String?
+  toEmail             String
+  subject             String
+  /// Original `Message-ID` header of the inbound email.
+  providerMessageId   String?             @unique
+  /// `In-Reply-To` header used for thread matching.
+  inReplyTo           String?
+  references          String?
+  bodyText            String?
+  bodyHtml            String?
+  /// AI classification (set asynchronously by the worker).
+  classification      ReplyClassification?
+  classificationConfidence Decimal?       @db.Decimal(4, 3)
+  classificationReason String?
+  classifiedAt        DateTime?
+  /// Stamp once the classifier has acted (paused sequence, advanced deal).
+  processedAt         DateTime?
+  rawPayload          Json?
+  receivedAt          DateTime            @default(now())
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([organizationId, receivedAt])
+  @@index([organizationId, leadId])
+  @@index([organizationId, dealId])
+  @@index([organizationId, outreachMessageId])
+  @@index([inReplyTo])
+}
+
+// =============================================================================
+// Billing — Phase 2
+// Invoice + Payment models, webhook idempotency table.
+// FK constraints + RLS policies added in 0017_billing.sql.
+// =============================================================================
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  UNCOLLECTIBLE
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+/// An invoice for a project/deal — either subscription-derived (from Stripe)
+/// or manually created for one-off project work.
+model Invoice {
+  id                   String        @id @default(uuid())
+  organizationId       String
+  /// Optional link to the won deal this invoice relates to.
+  dealId               String?
+  /// Optional project context.
+  projectId            String?
+  /// Mirrors the Stripe invoice id when synced from Stripe.
+  stripeInvoiceId      String?       @unique
+  status               InvoiceStatus @default(DRAFT)
+  currency             String        @default("USD")
+  /// Sub-total before tax, in minor units (cents).
+  subtotalCents        Int           @default(0)
+  taxCents             Int           @default(0)
+  totalCents           Int           @default(0)
+  /// Amount already collected (partial pay allowed).
+  amountPaidCents      Int           @default(0)
+  /// Amount still owing.
+  amountDueCents       Int           @default(0)
+  /// Human-readable invoice number e.g. INV-0042.
+  number               String?       @unique
+  memo                 String?
+  /// Line items stored as JSON array [{description, quantity, unitCents, totalCents}].
+  lineItems            Json          @default("[]")
+  /// When to collect. Null = no deadline.
+  dueAt                DateTime?
+  /// When the Stripe payment page or self-hosted link was last sent.
+  sentAt               DateTime?
+  paidAt               DateTime?
+  voidedAt             DateTime?
+  /// Stripe hosted invoice URL (for sharing with the client).
+  hostedUrl            String?
+  /// PDF download URL from Stripe or self-generated.
+  pdfUrl               String?
+  metadata             Json?
+  createdById          String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  payments             Payment[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
+/// Single payment attempt (Stripe PaymentIntent or bank transfer).
+model Payment {
+  id                      String        @id @default(uuid())
+  organizationId          String
+  invoiceId               String
+  stripePaymentIntentId   String?       @unique
+  stripeChargeId          String?
+  status                  PaymentStatus @default(PENDING)
+  currency                String        @default("USD")
+  amountCents             Int
+  failureCode             String?
+  failureMessage          String?
+  refundedCents           Int           @default(0)
+  paidAt                  DateTime?
+  refundedAt              DateTime?
+  metadata                Json?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  invoice                 Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, invoiceId])
+  @@index([organizationId, status, createdAt])
+}
+
+/// Idempotency table for Stripe webhook events.
+/// Prevents double-processing on retries — Stripe can deliver the same event
+/// multiple times; we record the event id here before acting.
+model StripeWebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
+
+/// Per-org spend budgets — AI tokens, email sends, lead enrichments.
+/// The AI router + job producers check these before dispatching costly ops.
+model CostBudget {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+  /// Max AI spend in USD cents per calendar month (null = unlimited).
+  aiMonthlyLimitCents    Int?
+  /// Max emails dispatched per calendar month (null = unlimited).
+  emailMonthlyLimit      Int?
+  /// Max enrichment calls per calendar month (null = unlimited).
+  enrichMonthlyLimit     Int?
+  /// When true the org has exceeded a limit and non-critical jobs are blocked.
+  hardLimitReached       Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([organizationId])
 }
 

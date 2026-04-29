@@ -12,6 +12,8 @@
   "dependencies": {
     "@crawlix/ai": "*",
     "@crawlix/db": "*",
+    "@crawlix/email": "*",
+    "@crawlix/outreach": "*",
     "@crawlix/providers": "*",
     "@crawlix/scoring": "*",
     "@crawlix/shared": "*",
