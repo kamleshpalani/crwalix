@@ -1290,3 +1290,69 @@ model SupportMessage {
   @@index([organizationId, ticketId, createdAt])
 }
 
+// =============================================================================
+// Quotes — Module #10. FK + RLS in 0022_quotes.sql.
+// =============================================================================
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model Quote {
+  id             String      @id @default(uuid())
+  organizationId String
+  /// Optional CRM context.
+  dealId         String?
+  leadId         String?
+  projectId      String?
+  /// Human-readable e.g. Q-0042 (org-scoped sequential).
+  number         String?
+  title          String
+  status         QuoteStatus @default(DRAFT)
+  currency       String      @default("USD")
+  /// Sub-total (sum of line totals).
+  subtotalCents  Int         @default(0)
+  /// Discount applied to subtotal (absolute cents).
+  discountCents  Int         @default(0)
+  /// Tax rate in basis points (e.g. 800 = 8.00%).
+  taxRateBps     Int         @default(0)
+  taxCents       Int         @default(0)
+  totalCents     Int         @default(0)
+  notes          String?
+  terms          String?
+  /// Public share token for customer accept/decline page.
+  shareToken     String?     @unique
+  validUntil     DateTime?
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  declinedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  lineItems      QuoteLineItem[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
+model QuoteLineItem {
+  id             String  @id @default(uuid())
+  organizationId String
+  quoteId        String
+  position       Int     @default(0)
+  description    String
+  /// Quantity * 1000 (3-decimal precision packed as int).
+  quantityMilli  Int     @default(1000)
+  unitPriceCents Int     @default(0)
+  lineTotalCents Int     @default(0)
+  createdAt      DateTime @default(now())
+  quote          Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, quoteId, position])
+}
+

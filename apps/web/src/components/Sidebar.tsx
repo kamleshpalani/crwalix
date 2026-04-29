@@ -36,6 +36,11 @@ const items: { href: string; label: string; icon: string }[] = [
     icon: "M4 6h6v6H4zM14 6h6v12h-6zM4 14h6v4H4z",
   },
   {
+    href: "/quotes",
+    label: "Quotes",
+    icon: "M9 12h6m-6 4h6M5 7h14M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z",
+  },
+  {
     href: "/exports",
     label: "Exports",
     icon: "M12 3v12m0 0l-4-4m4 4l4-4M5 21h14",
