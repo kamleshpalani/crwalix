@@ -30,25 +30,28 @@ export const dynamic = "force-dynamic";
 
 interface ResendInboundPayload {
   type?: string;
-  data?: {
-    from?: string | { email?: string; name?: string };
-    to?: string | string[] | { email?: string }[];
-    subject?: string;
-    text?: string;
-    html?: string;
-    headers?: Record<string, string | string[]>;
-    /** Resend's parsed Message-Id when available. */
-    message_id?: string;
-    in_reply_to?: string;
-    references?: string | string[];
-  };
-  // Some providers post the payload at root level instead of `.data`.
+  /** Resend wraps the email fields inside `.data`. Some providers post at root. */
+  data?: ResendEmailData;
+  // Root-level fallback (flat format used by some other providers).
   from?: string | { email?: string; name?: string };
-  to?: string | string[];
+  to?: string | string[] | { email?: string }[];
   subject?: string;
   text?: string;
   html?: string;
   headers?: Record<string, string | string[]>;
+}
+
+interface ResendEmailData {
+  from?: string | { email?: string; name?: string };
+  to?: string | string[] | { email?: string }[];
+  subject?: string;
+  text?: string;
+  html?: string;
+  headers?: Record<string, string | string[]>;
+  /** Resend's parsed Message-Id when available at the data level. */
+  message_id?: string;
+  in_reply_to?: string;
+  references?: string | string[];
 }
 
 /** Extract `<id@host>` style tokens from `In-Reply-To` / `References`. */
@@ -149,23 +152,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  const data = body.data ?? body;
-  const from = pickEmail(data.from);
-  const to = pickEmail(data.to as never);
-  const subject = (data.subject ?? "").slice(0, 998);
-  const bodyText = data.text ?? null;
-  const bodyHtml = data.html ?? null;
-  const headers = data.headers;
+  const d = body.data;
+  const from = pickEmail(d?.from ?? body.from);
+  const to = pickEmail((d?.to ?? body.to) as never);
+  const subject = (d?.subject ?? body.subject ?? "").slice(0, 998);
+  const bodyText = d?.text ?? body.text ?? null;
+  const bodyHtml = d?.html ?? body.html ?? null;
+  const headers = d?.headers ?? body.headers;
 
   const ourMessageId =
-    data.message_id ?? pickHeader(headers, "message-id") ?? null;
+    d?.message_id ?? pickHeader(headers, "message-id") ?? null;
   const inReplyToHeader =
-    data.in_reply_to ?? pickHeader(headers, "in-reply-to") ?? null;
+    d?.in_reply_to ?? pickHeader(headers, "in-reply-to") ?? null;
+  const rawRefs = d?.references;
   const referencesHeader =
     pickHeader(headers, "references") ??
-    (Array.isArray(data.references)
-      ? data.references.join(" ")
-      : data.references) ??
+    (Array.isArray(rawRefs) ? rawRefs.join(" ") : rawRefs) ??
     null;
 
   const candidateIds = Array.from(

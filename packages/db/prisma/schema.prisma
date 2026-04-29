@@ -1010,3 +1010,126 @@ model InboundMessage {
   @@index([inReplyTo])
 }
 
+// =============================================================================
+// Billing — Phase 2
+// Invoice + Payment models, webhook idempotency table.
+// FK constraints + RLS policies added in 0017_billing.sql.
+// =============================================================================
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  UNCOLLECTIBLE
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+/// An invoice for a project/deal — either subscription-derived (from Stripe)
+/// or manually created for one-off project work.
+model Invoice {
+  id                   String        @id @default(uuid())
+  organizationId       String
+  /// Optional link to the won deal this invoice relates to.
+  dealId               String?
+  /// Optional project context.
+  projectId            String?
+  /// Mirrors the Stripe invoice id when synced from Stripe.
+  stripeInvoiceId      String?       @unique
+  status               InvoiceStatus @default(DRAFT)
+  currency             String        @default("USD")
+  /// Sub-total before tax, in minor units (cents).
+  subtotalCents        Int           @default(0)
+  taxCents             Int           @default(0)
+  totalCents           Int           @default(0)
+  /// Amount already collected (partial pay allowed).
+  amountPaidCents      Int           @default(0)
+  /// Amount still owing.
+  amountDueCents       Int           @default(0)
+  /// Human-readable invoice number e.g. INV-0042.
+  number               String?       @unique
+  memo                 String?
+  /// Line items stored as JSON array [{description, quantity, unitCents, totalCents}].
+  lineItems            Json          @default("[]")
+  /// When to collect. Null = no deadline.
+  dueAt                DateTime?
+  /// When the Stripe payment page or self-hosted link was last sent.
+  sentAt               DateTime?
+  paidAt               DateTime?
+  voidedAt             DateTime?
+  /// Stripe hosted invoice URL (for sharing with the client).
+  hostedUrl            String?
+  /// PDF download URL from Stripe or self-generated.
+  pdfUrl               String?
+  metadata             Json?
+  createdById          String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  payments             Payment[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
+/// Single payment attempt (Stripe PaymentIntent or bank transfer).
+model Payment {
+  id                      String        @id @default(uuid())
+  organizationId          String
+  invoiceId               String
+  stripePaymentIntentId   String?       @unique
+  stripeChargeId          String?
+  status                  PaymentStatus @default(PENDING)
+  currency                String        @default("USD")
+  amountCents             Int
+  failureCode             String?
+  failureMessage          String?
+  refundedCents           Int           @default(0)
+  paidAt                  DateTime?
+  refundedAt              DateTime?
+  metadata                Json?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  invoice                 Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, invoiceId])
+  @@index([organizationId, status, createdAt])
+}
+
+/// Idempotency table for Stripe webhook events.
+/// Prevents double-processing on retries — Stripe can deliver the same event
+/// multiple times; we record the event id here before acting.
+model StripeWebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
+
+/// Per-org spend budgets — AI tokens, email sends, lead enrichments.
+/// The AI router + job producers check these before dispatching costly ops.
+model CostBudget {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+  /// Max AI spend in USD cents per calendar month (null = unlimited).
+  aiMonthlyLimitCents    Int?
+  /// Max emails dispatched per calendar month (null = unlimited).
+  emailMonthlyLimit      Int?
+  /// Max enrichment calls per calendar month (null = unlimited).
+  enrichMonthlyLimit     Int?
+  /// When true the org has exceeded a limit and non-critical jobs are blocked.
+  hardLimitReached       Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
