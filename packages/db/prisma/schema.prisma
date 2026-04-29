@@ -1418,3 +1418,32 @@ model Contract {
   @@index([organizationId, projectId])
 }
 
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+/// Module #21 — third-party integration connections per organization.
+model Integration {
+  id             String            @id @default(uuid())
+  organizationId String
+  /// Stable provider key e.g. slack, hubspot, gmail.
+  provider       String
+  status         IntegrationStatus @default(DISCONNECTED)
+  /// Human label displayed in the UI (e.g. workspace/account name).
+  accountLabel   String?
+  /// Sensitive credentials. Never returned to the client untransformed.
+  credentials    Json?
+  /// Non-sensitive provider config (toggles, scopes, default folder, etc).
+  config         Json?
+  lastError      String?
+  lastSyncedAt   DateTime?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, status])
+}
+
