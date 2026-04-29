@@ -10,10 +10,14 @@ import { NextResponse } from "next/server";
 import {
   portalService,
   PORTAL_COOKIE_NAME,
+  isPortalConfigured,
 } from "@/server/services/portal.service";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  if (!isPortalConfigured()) {
+    return NextResponse.redirect(new URL("/portal/login?e=unconfigured", url));
+  }
   const secret = url.searchParams.get("t");
   if (!secret) {
     return NextResponse.redirect(new URL("/portal/login?e=invalid", url));

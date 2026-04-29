@@ -8,7 +8,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
-import { portalService } from "@/server/services/portal.service";
+import {
+  portalService,
+  isPortalConfigured,
+} from "@/server/services/portal.service";
 
 const Schema = z.object({
   email: z.string().email(),
@@ -46,12 +49,26 @@ export async function POST(
     );
   }
 
+  const url = new URL(req.url);
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? `${url.protocol}//${url.host}`;
+
   const access = await portalService.invite(ctx.orgId, ctx.userId, {
     projectId: params.projectId,
     email: parsed.data.email,
     name: parsed.data.name,
+    baseUrl,
   });
   if (!access)
     return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
-  return NextResponse.json({ access }, { status: 201 });
+
+  return NextResponse.json(
+    {
+      access,
+      // Surface a hint to the UI when the secret isn't configured so we can
+      // show a friendly message rather than silently failing the email.
+      portalConfigured: isPortalConfigured(),
+    },
+    { status: 201 },
+  );
 }

@@ -21,6 +21,9 @@ export default function ProjectPortalPanel({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
+  const [portalConfigured, setPortalConfigured] = useState<boolean | null>(
+    null,
+  );
 
   const base = `/api/v1/projects/${projectId}/portal-invites`;
 
@@ -43,7 +46,7 @@ export default function ProjectPortalPanel({
     if (!email.trim()) return;
     setPending(true);
     try {
-      await fetch(base, {
+      const r = await fetch(base, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -51,6 +54,10 @@ export default function ProjectPortalPanel({
           name: name.trim() || undefined,
         }),
       });
+      const j = await r.json().catch(() => ({}));
+      if (typeof j?.portalConfigured === "boolean") {
+        setPortalConfigured(j.portalConfigured);
+      }
       setEmail("");
       setName("");
       await refresh();
@@ -74,6 +81,17 @@ export default function ProjectPortalPanel({
         Invite clients by email. They&apos;ll get a magic-link sign-in to view
         milestones and files — no password needed.
       </p>
+
+      {portalConfigured === false && (
+        <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Heads up: the client portal isn&apos;t fully configured yet (missing
+          <code className="mx-1 rounded bg-amber-100 px-1">
+            PORTAL_SESSION_SECRET
+          </code>
+          env var). Invites are saved, but sign-in emails won&apos;t send until
+          an admin sets it.
+        </div>
+      )}
 
       <form
         onSubmit={invite}

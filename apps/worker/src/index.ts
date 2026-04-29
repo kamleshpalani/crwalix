@@ -32,6 +32,7 @@ import { runOutreachSend } from "./pipelines/outreach-send";
 import { runOutreachSequenceTick } from "./pipelines/outreach-sequence-tick";
 import { runOutreachClassifyReply } from "./pipelines/outreach-classify-reply";
 import { runBillingDunning } from "./pipelines/billing-dunning";
+import { runWeeklyDigest } from "./pipelines/weekly-digest";
 import { startScheduler } from "./pipelines/scheduler";
 
 const connection = getConnection();
@@ -145,6 +146,16 @@ const dunningTimer = setInterval(
   24 * 60 * 60 * 1000,
 );
 dunningTimer.unref();
+
+// Weekly digest: AI-generated summary email per org.
+// Runs every 24 hours; per-org guard prevents resending within 6 days, so
+// the effective cadence is weekly without needing cron.
+void runWeeklyDigest();
+const digestTimer = setInterval(
+  () => void runWeeklyDigest(),
+  24 * 60 * 60 * 1000,
+);
+digestTimer.unref();
 
 // Recurring-search scheduler: enqueues `search.ingest` for every Search
 // row whose `nextRunAt` has elapsed. Polls once per minute by default.

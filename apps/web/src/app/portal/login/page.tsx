@@ -16,7 +16,9 @@ export default function PortalLoginPage({
       ? "Your link has expired. Request a new one below."
       : searchParams.e === "invalid"
         ? "That link wasn't valid. Try requesting a new one."
-        : null;
+        : searchParams.e === "unconfigured"
+          ? "The client portal isn't fully set up yet. Please contact your project team."
+          : null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
