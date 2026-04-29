@@ -382,6 +382,45 @@ export default async function LeadDetailPage({
         )}
       </Card>
 
+      <Card
+        title={`Merge history (${(lead.mergeHistoryAsCanonical ?? []).length})`}
+      >
+        {(lead.mergeHistoryAsCanonical ?? []).length === 0 ? (
+          <p className="text-sm text-ink-500">
+            No duplicates merged into this lead yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-white/60">
+            {(lead.mergeHistoryAsCanonical ?? []).map((m) => {
+              const conf = Math.round((m.confidence ?? 0) * 100);
+              return (
+                <li
+                  key={m.id}
+                  className="flex items-center justify-between gap-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">
+                      {m.reason.replaceAll("_", " ")}
+                      <span className="ml-2 text-xs text-ink-500 font-mono">
+                        {conf}%
+                      </span>
+                    </div>
+                    <div className="text-xs text-ink-500">
+                      {[m.fromProvider, m.fromExternalId]
+                        .filter(Boolean)
+                        .join(" · ") || "manual"}
+                      {" · "}
+                      {m.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                    </div>
+                  </div>
+                  <Badge tone={mergeTone(conf)}>{m.reason}</Badge>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
       {lead.provider === "google_places" && (
         <p className="text-xs text-ink-500">
           Business data powered by Google. Cached fields are refreshed or
@@ -406,6 +445,12 @@ function Card({
       <div className="mt-3 space-y-2">{children}</div>
     </div>
   );
+}
+
+function mergeTone(conf: number): "emerald" | "amber" | "slate" {
+  if (conf >= 90) return "emerald";
+  if (conf >= 70) return "amber";
+  return "slate";
 }
 
 type BusinessScaleSignalsPayload = {

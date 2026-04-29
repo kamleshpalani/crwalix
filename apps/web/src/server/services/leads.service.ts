@@ -246,6 +246,10 @@ export const leadsService = {
             orderBy: { createdAt: "desc" },
             include: { searchRun: { include: { search: true } } },
           },
+          mergeHistoryAsCanonical: {
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          },
         },
       }),
     );
@@ -419,6 +423,9 @@ export const leadsService = {
           provider,
           externalPlaceId,
           city: input.city,
+          address: input.address,
+          lat: input.lat,
+          lng: input.lng,
         });
         if (dup) {
           // Fill missing fields without overwriting existing data.
