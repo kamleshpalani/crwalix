@@ -187,14 +187,50 @@ model Project {
   organizationId String
   name           String
   description    String?
+  /// Optional link back to the deal that triggered project kickoff.
+  /// One project per won deal — UNIQUE so the kickoff is idempotent.
+  dealId         String?  @unique
+  /// Convenience denorm of the originating lead (for quick filters).
+  leadId         String?
+  /// PLANNING | ACTIVE | PAUSED | COMPLETED | ARCHIVED. Plain text so we
+  /// don't have to ship a Postgres enum migration just for five values.
+  status         String   @default("PLANNING")
+  kickoffAt      DateTime?
+  completedAt    DateTime?
   createdById    String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   searches       Search[]
   leadLists      LeadList[]
+  tasks          ProjectTask[]
 
   @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, leadId])
+}
+
+/// Kickoff checklist items for a Project. Created by `seed_default_project_tasks`
+/// when a deal flips to a Won stage; manually editable thereafter.
+model ProjectTask {
+  id              String   @id @default(uuid())
+  organizationId  String
+  projectId       String
+  title           String
+  description     String?
+  /// TODO | IN_PROGRESS | DONE | BLOCKED.
+  status          String   @default("TODO")
+  /// Display order within the project. Lower = top.
+  position        Int      @default(0)
+  dueAt           DateTime?
+  assigneeUserId  String?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, position])
+  @@index([organizationId, status])
 }
 
 model Search {
@@ -694,6 +730,8 @@ model Deal {
   stageId        String
   /// Optional originating lead. Nullable so deals can be created manually.
   leadId         String?
+  /// Set when the deal moves to a Won stage and a Project is auto-created.
+  projectId      String?    @unique
   title          String
   amountCents    Int        @default(0)
   currency       String     @default("USD")
