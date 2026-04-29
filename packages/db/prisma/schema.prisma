@@ -204,6 +204,8 @@ model Project {
   searches       Search[]
   leadLists      LeadList[]
   tasks          ProjectTask[]
+  milestones     Milestone[]
+  files          ProjectFile[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -231,6 +233,96 @@ model ProjectTask {
 
   @@index([organizationId, projectId, position])
   @@index([organizationId, status])
+}
+
+/// Billable checkpoint within a Project. When marked COMPLETED with
+/// `autoInvoice=true`, the worker auto-creates a Stripe invoice for
+/// `amountCents`. Tracks the resulting invoice for idempotency.
+model Milestone {
+  id              String   @id @default(uuid())
+  organizationId  String
+  projectId       String
+  title           String
+  description     String?
+  /// PENDING | IN_PROGRESS | COMPLETED | CANCELED.
+  status          String   @default("PENDING")
+  /// Display order within the project.
+  position        Int      @default(0)
+  /// Billable amount for this milestone in cents. 0 = non-billable checkpoint.
+  amountCents     Int      @default(0)
+  currency        String   @default("USD")
+  /// When true, completing the milestone auto-creates an Invoice.
+  autoInvoice     Boolean  @default(false)
+  /// Idempotency: invoice generated when this milestone was completed.
+  invoiceId       String?  @unique
+  dueAt           DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, position])
+  @@index([organizationId, status])
+}
+
+/// File attached to a project. Actual bytes live in Supabase Storage; this
+/// table stores metadata + the canonical storage path. Public access is
+/// served via short-lived signed URLs (see `apps/web/src/server/services/file.service.ts`).
+model ProjectFile {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  /// Storage bucket + path (e.g., "project-files/<orgId>/<projectId>/<uuid>-name.pdf").
+  /// Bucket is implicit (single bucket per env via SUPABASE_STORAGE_BUCKET).
+  storagePath    String   @unique
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  /// SHA-256 of file contents — for dedupe and integrity checks.
+  contentHash    String?
+  uploadedById   String
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, createdAt])
+}
+
+/// Persistent grant: an external email is allowed read access to a Project
+/// via the client portal. Created when the project owner invites a client.
+/// Multiple grants per project are allowed (e.g., point-of-contact + boss).
+model PortalAccess {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  email          String
+  /// Display name (optional — falls back to email).
+  name           String?
+  /// PENDING (invited, not yet logged in) | ACTIVE | REVOKED.
+  status         String   @default("PENDING")
+  invitedById    String
+  invitedAt      DateTime @default(now())
+  lastLoginAt    DateTime?
+  revokedAt      DateTime?
+
+  @@unique([projectId, email])
+  @@index([organizationId, projectId])
+  @@index([email])
+}
+
+/// One-shot magic link token. SHA-256 hash of the random secret is stored.
+/// Consumed (deleted) on first successful verification.
+model PortalLoginToken {
+  id             String   @id @default(uuid())
+  organizationId String
+  portalAccessId String
+  /// SHA-256 hex of the secret. Raw secret never persisted.
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
 }
 
 model Search {

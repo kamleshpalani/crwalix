@@ -7,6 +7,9 @@ import { projectsService } from "@/server/services/projects.service";
 import { withOrg } from "@crawlix/db";
 import ProjectEditForm from "./ProjectEditForm";
 import ProjectTasksPanel from "./ProjectTasksPanel";
+import ProjectMilestonesPanel from "./ProjectMilestonesPanel";
+import ProjectFilesPanel from "./ProjectFilesPanel";
+import ProjectPortalPanel from "./ProjectPortalPanel";
 
 export default async function ProjectDetailPage({
   params,
@@ -76,6 +79,13 @@ export default async function ProjectDetailPage({
       </div>
 
       <ProjectTasksPanel projectId={project.id} />
+
+      <ProjectMilestonesPanel projectId={project.id} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ProjectFilesPanel projectId={project.id} />
+        <ProjectPortalPanel projectId={project.id} />
+      </div>
 
       <section>
         <h2 className="text-lg font-medium">Recent searches</h2>

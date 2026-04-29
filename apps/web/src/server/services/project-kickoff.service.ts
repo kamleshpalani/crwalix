@@ -60,6 +60,24 @@ export const projectKickoffService = {
       // canonical task list lives in one place.
       await tx.$executeRaw`select public.seed_default_project_tasks(${project.id}, ${orgId})`;
 
+      // Seed default milestones (Phase 3.1). Three-stage delivery template:
+      // kickoff → mid-project → final. All non-billable by default; users can
+      // edit amounts and toggle autoInvoice per milestone.
+      const defaultMilestones = [
+        { title: "Kickoff & Discovery", position: 0 },
+        { title: "Mid-project Review", position: 1 },
+        { title: "Final Delivery", position: 2 },
+      ];
+      await tx.milestone.createMany({
+        data: defaultMilestones.map((m) => ({
+          organizationId: orgId,
+          projectId: project.id,
+          title: m.title,
+          position: m.position,
+          status: "PENDING",
+        })),
+      });
+
       return { project, created: true };
     });
   },
