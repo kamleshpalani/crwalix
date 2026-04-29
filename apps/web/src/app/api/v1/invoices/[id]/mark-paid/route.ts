@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { invoiceService } from "@/server/services/invoice.service";
+import { auditService } from "@/server/services/audit.service";
 
 const Body = z
   .object({
@@ -29,6 +30,13 @@ export async function POST(
   const data = parsed.success && parsed.data ? parsed.data : {};
   try {
     const invoice = await invoiceService.markPaid(ctx.orgId, params.id, data);
+    await auditService.record({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      action: "invoice.mark_paid",
+      target: invoice.id,
+      metadata: { number: invoice.number, method: data.method ?? "manual" },
+    });
     return NextResponse.json({ invoice });
   } catch (e) {
     const code = e instanceof Error ? e.message : "ERROR";

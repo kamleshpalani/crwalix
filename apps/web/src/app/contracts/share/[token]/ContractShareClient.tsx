@@ -6,7 +6,7 @@ interface Contract {
   id: string;
   number: string | null;
   title: string;
-  status: "SENT" | "SIGNED" | "DECLINED";
+  status: "DRAFT" | "SENT" | "SIGNED" | "DECLINED" | "CANCELED" | "EXPIRED";
   bodyMarkdown: string;
   counterpartyName: string | null;
   signedName: string | null;

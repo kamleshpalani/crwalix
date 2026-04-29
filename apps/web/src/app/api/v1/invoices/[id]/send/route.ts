@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { invoiceService } from "@/server/services/invoice.service";
+import { auditService } from "@/server/services/audit.service";
 
 export async function POST(
   _req: Request,
@@ -12,6 +13,13 @@ export async function POST(
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
   try {
     const invoice = await invoiceService.send(ctx.orgId, params.id);
+    await auditService.record({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      action: "invoice.send",
+      target: invoice.id,
+      metadata: { number: invoice.number, totalCents: invoice.totalCents },
+    });
     return NextResponse.json({ invoice });
   } catch (e) {
     const code = e instanceof Error ? e.message : "ERROR";

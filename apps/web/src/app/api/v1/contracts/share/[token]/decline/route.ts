@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { contractService } from "@/server/services/contract.service";
+import { auditService } from "@/server/services/audit.service";
 
 export const runtime = "nodejs";
 

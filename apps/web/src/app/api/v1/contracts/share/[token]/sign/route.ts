@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { contractService } from "@/server/services/contract.service";
+import { auditService } from "@/server/services/audit.service";
 
 export const runtime = "nodejs";
 
@@ -44,5 +45,13 @@ export async function POST(
       { status: 404 },
     );
   }
+  await auditService.record({
+    orgId: null,
+    action: "contract.sign",
+    target: contract.id,
+    metadata: { number: contract.number, signedName: contract.signedName },
+    ip,
+    userAgent,
+  });
   return NextResponse.json({ contract });
 }

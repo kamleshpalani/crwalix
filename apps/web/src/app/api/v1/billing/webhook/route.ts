@@ -360,6 +360,24 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
         },
       },
     });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: inv.organizationId,
+          action: "invoice.paid_stripe",
+          target: inv.id,
+          metadata: {
+            session_id: sess.id,
+            payment_intent:
+              typeof sess.payment_intent === "string"
+                ? sess.payment_intent
+                : null,
+          } as unknown as object,
+        },
+      });
+    } catch (err) {
+      console.warn("[webhook] audit write failed", err);
+    }
     return;
   }
 
