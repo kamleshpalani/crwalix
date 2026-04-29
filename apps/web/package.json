@@ -13,6 +13,8 @@
   "dependencies": {
     "@clerk/nextjs": "^5.7.0",
     "@crawlix/db": "*",
+    "@crawlix/email": "*",
+    "@crawlix/outreach": "*",
     "@crawlix/providers": "*",
     "@crawlix/scoring": "*",
     "@crawlix/shared": "*",

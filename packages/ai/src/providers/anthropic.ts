@@ -4,8 +4,8 @@ import {
   type AiCompleteRequest,
   type AiCompleteResult,
   type AiMessage,
-} from "./types";
-import { buildUsage } from "./pricing";
+} from "../types";
+import { buildUsage } from "../pricing";
 
 let _client: Anthropic | null = null;
 function client(): Anthropic {

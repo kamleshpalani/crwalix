@@ -1,13 +1,18 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { requireOrg, isResponse, isAuthError } from '@/lib/auth';
-import NoOrgBanner from '@/components/NoOrgBanner';
-import { Badge, statusTone } from '@/components/Badge';
-import { projectsService } from '@/server/services/projects.service';
-import { withOrg } from '@crawlix/db';
-import ProjectEditForm from './ProjectEditForm';
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
+import NoOrgBanner from "@/components/NoOrgBanner";
+import { Badge, statusTone } from "@/components/Badge";
+import { projectsService } from "@/server/services/projects.service";
+import { withOrg } from "@crawlix/db";
+import ProjectEditForm from "./ProjectEditForm";
+import ProjectTasksPanel from "./ProjectTasksPanel";
 
-export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default async function ProjectDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const ctx = await requireOrg();
   if (isResponse(ctx)) return null;
   if (isAuthError(ctx)) return <NoOrgBanner />;
@@ -19,9 +24,9 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     tx.lead.count({
       where: {
         organizationId: ctx.orgId,
-        sources: { some: { searchRun: { search: { projectId: project.id } } } }
-      }
-    })
+        sources: { some: { searchRun: { search: { projectId: project.id } } } },
+      },
+    }),
   );
 
   const edits = await projectsService.listEdits(ctx.orgId, project.id, 20);
@@ -29,7 +34,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/projects" className="text-sm text-ink-500 hover:text-ink-900">
+        <Link
+          href="/projects"
+          className="text-sm text-ink-500 hover:text-ink-900"
+        >
           ← Projects
         </Link>
         <div className="mt-2 flex items-start justify-between gap-6">
@@ -67,6 +75,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         </div>
       </div>
 
+      <ProjectTasksPanel projectId={project.id} />
+
       <section>
         <h2 className="text-lg font-medium">Recent searches</h2>
         <ul className="mt-3 glass overflow-hidden divide-y divide-white/60">
@@ -75,14 +85,17 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           )}
           {project.searches.map((s) => (
             <li key={s.id} className="p-4 hover:bg-white/70">
-              <Link href={`/searches/${s.id}`} className="flex items-center justify-between">
+              <Link
+                href={`/searches/${s.id}`}
+                className="flex items-center justify-between"
+              >
                 <div>
                   <div className="font-medium">{s.name}</div>
                   <div className="text-xs text-ink-500">
-                    {s.provider} · {s.keyword ?? s.niche ?? '—'}
+                    {s.provider} · {s.keyword ?? s.niche ?? "—"}
                   </div>
                 </div>
-                <Badge tone={statusTone('QUEUED')}>{s.provider}</Badge>
+                <Badge tone={statusTone("QUEUED")}>{s.provider}</Badge>
               </Link>
             </li>
           ))}
@@ -90,38 +103,52 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       </section>
 
       <section className="glass p-4">
-        <h2 className="text-sm font-semibold text-ink-900">Edit history ({edits.length})</h2>
+        <h2 className="text-sm font-semibold text-ink-900">
+          Edit history ({edits.length})
+        </h2>
         {edits.length === 0 ? (
           <p className="mt-2 text-sm text-ink-500">No edits yet.</p>
         ) : (
           <ul className="mt-3 divide-y divide-white/60 text-sm">
             {edits.map((e) => {
-              const diff = (e.diff ?? {}) as Record<string, { from: unknown; to: unknown }>;
+              const diff = (e.diff ?? {}) as Record<
+                string,
+                { from: unknown; to: unknown }
+              >;
               const fields = Object.keys(diff);
               return (
                 <li key={e.id} className="py-2.5">
                   <div className="text-xs text-ink-500">
-                    {e.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
+                    {e.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                     {e.editedByName && (
-                      <span className="ml-2">· by <span className="text-ink-700">{e.editedByName}</span></span>
+                      <span className="ml-2">
+                        · by{" "}
+                        <span className="text-ink-700">{e.editedByName}</span>
+                      </span>
                     )}
                     {fields.length > 0 && (
-                      <span className="ml-2">· {fields.length} field{fields.length === 1 ? '' : 's'} changed</span>
+                      <span className="ml-2">
+                        · {fields.length} field{fields.length === 1 ? "" : "s"}{" "}
+                        changed
+                      </span>
                     )}
                   </div>
                   <ul className="mt-1 grid grid-cols-1 gap-0.5 text-xs md:grid-cols-2">
                     {fields.map((f) => {
                       const v = diff[f];
                       const fmt = (x: unknown) => {
-                        if (x === null || x === undefined || x === '') return '∅';
+                        if (x === null || x === undefined || x === "")
+                          return "∅";
                         const s = String(x);
-                        return s.length > 40 ? s.slice(0, 40) + '…' : s;
+                        return s.length > 40 ? s.slice(0, 40) + "…" : s;
                       };
                       return (
                         <li key={f} className="font-mono text-ink-600">
-                          <span className="font-semibold text-ink-900">{f}:</span>{' '}
-                          <span className="text-rose-700">{fmt(v?.from)}</span>{' '}
-                          <span className="text-ink-400">→</span>{' '}
+                          <span className="font-semibold text-ink-900">
+                            {f}:
+                          </span>{" "}
+                          <span className="text-rose-700">{fmt(v?.from)}</span>{" "}
+                          <span className="text-ink-400">→</span>{" "}
                           <span className="text-emerald-700">{fmt(v?.to)}</span>
                         </li>
                       );

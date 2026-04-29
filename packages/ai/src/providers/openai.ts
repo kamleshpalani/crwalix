@@ -3,8 +3,8 @@ import {
   AiProviderError,
   type AiCompleteRequest,
   type AiCompleteResult,
-} from "./types";
-import { buildUsage } from "./pricing";
+} from "../types";
+import { buildUsage } from "../pricing";
 
 let _client: OpenAI | null = null;
 function client(): OpenAI {
@@ -22,7 +22,12 @@ export async function openaiComplete(
   try {
     const res = await client().chat.completions.create({
       model,
-      messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: req.messages.map(
+        (m: AiCompleteRequest["messages"][number]) => ({
+          role: m.role,
+          content: m.content,
+        }),
+      ),
       temperature: req.temperature ?? 0.3,
       max_tokens: req.maxTokens ?? 1500,
       response_format: req.jsonMode ? { type: "json_object" } : undefined,
