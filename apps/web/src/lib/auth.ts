@@ -1,6 +1,6 @@
-import { auth, clerkClient } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
-import { prisma } from '@crawlix/db';
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { prisma } from "@crawlix/db";
 
 export interface AuthContext {
   userId: string; // Crawlix User.id (internal)
@@ -8,16 +8,19 @@ export interface AuthContext {
   clerkOrgId: string;
   orgId: string;
   role: string;
+  isSuperAdmin: boolean;
 }
 
-export type AuthError = { code: 'UNAUTHORIZED' | 'NO_ORG' };
+export type AuthError = {
+  code: "UNAUTHORIZED" | "NO_ORG" | "USER_SUSPENDED" | "ORG_SUSPENDED";
+};
 
 export function isResponse(x: unknown): x is NextResponse {
   return x instanceof NextResponse;
 }
 
 export function isAuthError(x: unknown): x is AuthError {
-  return typeof x === 'object' && x !== null && 'code' in x;
+  return typeof x === "object" && x !== null && "code" in x;
 }
 
 /**
@@ -31,12 +34,14 @@ export function isAuthError(x: unknown): x is AuthError {
  * deterministic for single-org workspaces and recovers from JWT propagation
  * lag for multi-org users (we pick the most recently created).
  */
-export async function requireOrg(): Promise<AuthContext | NextResponse | AuthError> {
+export async function requireOrg(): Promise<
+  AuthContext | NextResponse | AuthError
+> {
   const { userId, orgId: clerkOrgIdFromJwt, orgRole } = auth();
   if (!userId) {
     return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Sign in required' } },
-      { status: 401 }
+      { error: { code: "UNAUTHORIZED", message: "Sign in required" } },
+      { status: 401 },
     );
   }
 
@@ -44,8 +49,13 @@ export async function requireOrg(): Promise<AuthContext | NextResponse | AuthErr
   const user = await prisma.user.upsert({
     where: { clerkId: userId },
     update: {},
-    create: { clerkId: userId, email: `${userId}@placeholder.local` }
+    create: { clerkId: userId, email: `${userId}@placeholder.local` },
   });
+
+  // Section 6.1 — block suspended/deleted/pending users immediately.
+  if (user.status !== "ACTIVE") {
+    return { code: "USER_SUSPENDED" } satisfies AuthError;
+  }
 
   let clerkOrgId = clerkOrgIdFromJwt ?? null;
   let role = orgRole ?? null;
@@ -55,20 +65,21 @@ export async function requireOrg(): Promise<AuthContext | NextResponse | AuthErr
   // have a second fallback.
   if (!clerkOrgId) {
     try {
-      const memberships = await clerkClient().users.getOrganizationMembershipList({
-        userId
-      });
+      const memberships =
+        await clerkClient().users.getOrganizationMembershipList({
+          userId,
+        });
       const list = memberships?.data ?? [];
       if (list.length > 0) {
         const sorted = [...list].sort(
-          (a, b) => Number(b.createdAt) - Number(a.createdAt)
+          (a, b) => Number(b.createdAt) - Number(a.createdAt),
         );
         const m = sorted[0]!;
         clerkOrgId = m.organization.id;
         role = m.role;
       }
     } catch (e) {
-      console.warn('[auth] Backend membership lookup failed', e);
+      console.warn("[auth] Backend membership lookup failed", e);
     }
   }
 
@@ -80,7 +91,7 @@ export async function requireOrg(): Promise<AuthContext | NextResponse | AuthErr
     const localMember = await prisma.organizationMember.findFirst({
       where: { userId: user.id },
       include: { organization: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: "desc" },
     });
     if (localMember?.organization?.clerkOrgId) {
       clerkOrgId = localMember.organization.clerkOrgId;
@@ -89,26 +100,43 @@ export async function requireOrg(): Promise<AuthContext | NextResponse | AuthErr
   }
 
   if (!clerkOrgId) {
-    return { code: 'NO_ORG' } satisfies AuthError;
+    return { code: "NO_ORG" } satisfies AuthError;
   }
 
   const org = await prisma.organization.upsert({
     where: { clerkOrgId },
     update: {},
-    create: { clerkOrgId, slug: clerkOrgId.toLowerCase(), name: 'New Organization' }
+    create: {
+      clerkOrgId,
+      slug: clerkOrgId.toLowerCase(),
+      name: "New Organization",
+    },
   });
+
+  // Section 6.2 — block suspended/deleted/pending orgs.
+  if (org.status !== "ACTIVE") {
+    return { code: "ORG_SUSPENDED" } satisfies AuthError;
+  }
+
+  // Best-effort lastLoginAt (debounced ~1h to avoid hot-path writes).
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  if (!user.lastLoginAt || user.lastLoginAt.getTime() < oneHourAgo) {
+    prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => {});
+  }
 
   // Cache the membership locally so we can recover from Clerk API outages.
   await prisma.organizationMember
     .upsert({
       where: {
-        organizationId_userId: { organizationId: org.id, userId: user.id }
+        organizationId_userId: { organizationId: org.id, userId: user.id },
       },
       update: {},
-      create: { organizationId: org.id, userId: user.id, role: 'MEMBER' }
+      create: { organizationId: org.id, userId: user.id, role: "MEMBER" },
     })
     .catch((e) => {
-      console.warn('[auth] OrganizationMember upsert failed', e);
+      console.warn("[auth] OrganizationMember upsert failed", e);
     });
 
   return {
@@ -116,6 +144,37 @@ export async function requireOrg(): Promise<AuthContext | NextResponse | AuthErr
     clerkUserId: userId,
     clerkOrgId,
     orgId: org.id,
-    role: role ?? 'member'
+    role: role ?? "member",
+    isSuperAdmin: user.isSuperAdmin,
   };
+}
+
+/**
+ * Section 6.1 — Super-admin gate for cross-tenant platform endpoints.
+ * Returns the authed user's id, or an `AuthError` / `NextResponse`.
+ */
+export async function requireSuperAdmin(): Promise<
+  { userId: string } | NextResponse | AuthError
+> {
+  const { userId } = auth();
+  if (!userId) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "Sign in required" } },
+      { status: 401 },
+    );
+  }
+  const user = await prisma.user.findUnique({
+    where: { clerkId: userId },
+    select: { id: true, status: true, isSuperAdmin: true },
+  });
+  if (!user || !user.isSuperAdmin) {
+    return NextResponse.json(
+      { error: { code: "FORBIDDEN", message: "Super admin only" } },
+      { status: 403 },
+    );
+  }
+  if (user.status !== "ACTIVE") {
+    return { code: "USER_SUSPENDED" } satisfies AuthError;
+  }
+  return { userId: user.id };
 }

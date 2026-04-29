@@ -23,6 +23,28 @@ enum Role {
   MEMBER
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  DELETED
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  DELETED
+}
+
+enum BillingStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  NONE
+}
+
 enum Plan {
   FREE
   STARTER
@@ -111,7 +133,14 @@ model User {
   clerkId     String   @unique
   email       String   @unique
   fullName    String?
+  firstName   String?
+  lastName    String?
+  phone       String?
   avatarUrl   String?
+  status      UserStatus @default(ACTIVE)
+  /// Platform-level Super Admin (cross-tenant). Distinct from per-org Role.
+  isSuperAdmin Boolean  @default(false)
+  lastLoginAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   memberships OrganizationMember[]
@@ -124,6 +153,21 @@ model Organization {
   clerkOrgId       String?  @unique
   name             String
   plan             Plan     @default(FREE)
+  status           OrgStatus @default(ACTIVE)
+  billingStatus    BillingStatus @default(NONE)
+  /// Public company contact info (Section 6.2).
+  companyEmail     String?
+  companyPhone     String?
+  website          String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  postalCode       String?
+  country          String?
+  /// Soft caps enforced by the usage layer; null = unlimited.
+  aiUsageLimit     Int?
+  leadSearchLimit  Int?
   stripeCustomerId String?  @unique
   /// Optional outbound webhook fired when newly-discovered leads arrive
   /// from a scheduled search. Slack-compatible incoming webhooks work too.
