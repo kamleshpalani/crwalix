@@ -41,7 +41,7 @@ export const projectKickoffService = {
       const project = await tx.project.create({
         data: {
           organizationId: orgId,
-          createdById: userId,
+          createdById: userId ?? "system",
           name: deal.title,
           dealId: deal.id,
           leadId: deal.leadId,

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.0",
+    "@crawlix/billing": "*",
     "@crawlix/db": "*",
     "@crawlix/email": "*",
     "@crawlix/outreach": "*",

@@ -116,7 +116,7 @@ export const sequenceService = {
           status: SequenceRunStatus.RUNNING,
           currentStepIndex: 0,
           nextRunAt: new Date(),
-          vars: input.vars ?? null,
+          vars: (input.vars ?? {}) as never,
           createdById: userId,
         },
       });

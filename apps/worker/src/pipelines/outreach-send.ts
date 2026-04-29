@@ -3,17 +3,20 @@
 // Single outbound email dispatcher. Handles:
 //   1. Compliance gate (CAN-SPAM sender identity) via OutreachSettings.
 //   2. Suppression check against OutreachSuppression.
-//   3. Persists an OutreachMessage row (status=QUEUED) BEFORE sending so the
+//   3. Budget check via CostBudget (email monthly limit).
+//   4. Persists an OutreachMessage row (status=QUEUED) BEFORE sending so the
 //      tracking pixel URL resolves to a real id.
-//   4. Renders subject/body via @crawlix/outreach (variables, footer, pixel).
-//   5. Dispatches via @crawlix/email.
-//   6. Stamps providerId / sentAt / status post-send.
+//   5. Renders subject/body via @crawlix/outreach (variables, footer, pixel).
+//   6. Dispatches via @crawlix/email.
+//   7. Stamps providerId / sentAt / status post-send.
+//   8. Records usage to UsageLog.
 //
 // On failure the row is updated to FAILED with errorMessage; the BullMQ retry
 // policy decides whether to re-enqueue. Suppression hits land as SUPPRESSED
-// (terminal — never retried).
+// (terminal — never retried). Budget limit hits land as BUDGET_EXCEEDED
+// (terminal — never retried until next month).
 
-import { prisma, withOrg } from "@crawlix/db";
+import { prisma, withOrg, checkEmailBudget } from "@crawlix/db";
 import {
   buildOutreach,
   checkOutreachCompliance,
@@ -69,6 +72,14 @@ export async function runOutreachSend(job: OutreachSendJob): Promise<void> {
   if (ctx.suppressed) {
     log.info({ to: job.toEmail }, "outreach blocked: suppressed");
     await recordTerminal(job, "SUPPRESSED", "recipient on suppression list");
+    return;
+  }
+
+  // Budget check (Phase 2: email monthly limit enforcement).
+  const budgetCheck = await checkEmailBudget(job.organizationId);
+  if (!budgetCheck.allowed) {
+    log.warn({ reason: budgetCheck.reason }, "outreach blocked: budget");
+    await recordTerminal(job, "FAILED", budgetCheck.reason ?? "budget limit");
     return;
   }
 
@@ -132,6 +143,21 @@ export async function runOutreachSend(job: OutreachSendJob): Promise<void> {
 
   if (result.ok) {
     log.info({ id: message.id, provider: result.provider }, "outreach sent");
+
+    // Record usage for billing/metering.
+    await withOrg(job.organizationId, (tx) =>
+      tx.usageLog.create({
+        data: {
+          organizationId: job.organizationId,
+          kind: "outreach.send",
+          units: 1,
+          metadata: { provider: result.provider, messageId: message.id },
+        },
+      }),
+    ).catch(() => {
+      /* usage logging must never break the send flow */
+    });
+
     if (job.sequenceRunId) {
       await withOrg(job.organizationId, (tx) =>
         tx.sequenceRun.update({

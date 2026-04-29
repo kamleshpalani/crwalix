@@ -31,6 +31,7 @@ import { runGenerateProposal } from "./pipelines/generate-proposal";
 import { runOutreachSend } from "./pipelines/outreach-send";
 import { runOutreachSequenceTick } from "./pipelines/outreach-sequence-tick";
 import { runOutreachClassifyReply } from "./pipelines/outreach-classify-reply";
+import { runBillingDunning } from "./pipelines/billing-dunning";
 import { startScheduler } from "./pipelines/scheduler";
 
 const connection = getConnection();
@@ -135,6 +136,15 @@ const complianceTimer = setInterval(
   60 * 60 * 1000,
 );
 complianceTimer.unref();
+
+// Billing dunning: retry failed payments, escalate overdue invoices.
+// Runs on boot and every 24 hours thereafter.
+void runBillingDunning();
+const dunningTimer = setInterval(
+  () => void runBillingDunning(),
+  24 * 60 * 60 * 1000,
+);
+dunningTimer.unref();
 
 // Recurring-search scheduler: enqueues `search.ingest` for every Search
 // row whose `nextRunAt` has elapsed. Polls once per minute by default.
