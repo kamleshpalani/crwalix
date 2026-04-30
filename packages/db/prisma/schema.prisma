@@ -20,6 +20,12 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  /// Full sales access: leads, outreach, CRM, proposals, quotes.
+  SALES
+  /// Project delivery: projects, tasks, milestones, files, portal invites.
+  PROJECT_MANAGER
+  /// Finance access: invoices, billing history, export.
+  FINANCE
   MEMBER
 }
 
@@ -169,6 +175,9 @@ model Organization {
   /// Soft caps enforced by the usage layer; null = unlimited.
   aiUsageLimit     Int?
   leadSearchLimit  Int?
+  /// When true, all org members must complete a second factor (MFA/2FA)
+  /// before accessing tenant-scoped resources (Spec 6.1).
+  requireMfa       Boolean  @default(false)
   stripeCustomerId String?  @unique
   /// Optional outbound webhook fired when newly-discovered leads arrive
   /// from a scheduled search. Slack-compatible incoming webhooks work too.
@@ -469,6 +478,14 @@ model Lead {
   score             Int?
   priorityTier      PriorityTier?
   scoreBreakdown    Json?
+  /// AI-assigned 0-100 score (from `lead.score` task via scoreLeadWithAi).
+  aiScore           Int?
+  /// AI tier: CRITICAL | HIGH | MEDIUM | LOW
+  aiScoreTier       String?
+  /// Short reasoning paragraph from the AI scorer.
+  aiScoreReason     String?
+  /// Timestamp of last AI scoring run.
+  aiScoredAt        DateTime?
   /// Business-scale classification (SME | MID_MARKET | LARGE | UNKNOWN).
   /// Derived from public signals (categories, reviews, website tech, etc.).
   businessScale     String         @default("UNKNOWN")
@@ -504,6 +521,7 @@ model Lead {
   enrichments       Enrichment[]
   scores            LeadScore[]
   listMemberships   LeadListItem[]
+  fieldHistory      LeadFieldHistory[]
   mergeHistoryAsCanonical LeadMergeHistory[] @relation("LeadMergeCanonical")
   mergeHistoryAsPending   LeadMergeHistory[] @relation("LeadMergePending")
 
@@ -517,6 +535,24 @@ model Lead {
   @@index([organizationId, crmStage])
   @@index([organizationId, googlePlaceId])
   @@index([organizationId, yelpBusinessId])
+}
+
+/// Per-field change log for a Lead.  One row per changed field per update.
+/// Source values: 'user' | 'enrichment' | 'import' | 'webhook' | 'system'.
+model LeadFieldHistory {
+  id             String   @id @default(uuid())
+  organizationId String
+  leadId         String
+  field          String
+  oldValue       String?
+  newValue       String?
+  changedBy      String?
+  source         String   @default("user")
+  createdAt      DateTime @default(now())
+  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
 }
 
 /// Audit trail of cross-provider lead merges. One row per duplicate hit

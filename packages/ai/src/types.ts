@@ -12,7 +12,8 @@ export type AiTaskKind =
   | "outreach.email"
   | "report.weekly"
   | "support.answer"
-  | "search.parse";
+  | "search.parse"
+  | "lead.score";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";

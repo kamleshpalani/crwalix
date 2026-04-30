@@ -15,6 +15,8 @@ const Patch = z.object({
   state: z.string().trim().max(120).nullish(),
   postalCode: z.string().trim().max(40).nullish(),
   country: z.string().trim().max(120).nullish(),
+  /** Spec 6.1 — per-org MFA enforcement (admin/owner only). */
+  requireMfa: z.boolean().optional(),
 });
 
 const SELECT = {
@@ -35,6 +37,7 @@ const SELECT = {
   country: true,
   aiUsageLimit: true,
   leadSearchLimit: true,
+  requireMfa: true,
   createdAt: true,
   updatedAt: true,
 } as const;

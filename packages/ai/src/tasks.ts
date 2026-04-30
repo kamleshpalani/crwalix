@@ -760,3 +760,172 @@ export async function answerSupportQuestion(
     usage: result.usage,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* AI Lead Scoring                                                              */
+/* -------------------------------------------------------------------------- */
+
+export interface AiScoreLeadInput {
+  organizationId: string;
+  lead: {
+    name: string;
+    category?: string | null;
+    city?: string | null;
+    country?: string | null;
+    website?: string | null;
+    websiteStatus?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+    score?: number | null;
+    tags?: string[] | null;
+    intelSummary?: string | null;
+  };
+}
+
+export interface AiScoreLeadResult {
+  /** AI-assigned 0-100 score. */
+  score: number;
+  /** One of: CRITICAL | HIGH | MEDIUM | LOW */
+  tier: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  /** Short reasoning paragraph (1-3 sentences). */
+  reasoning: string;
+  usage: AiCompleteResult["usage"];
+  provider: AiCompleteResult["provider"];
+  model: AiCompleteResult["model"];
+}
+
+const AI_SCORE_SYSTEM = `You are an expert B2B lead qualification analyst. Given a business lead's data, produce a qualification score and tier.
+
+Respond ONLY with a valid JSON object (no markdown, no prose):
+{
+  "score": <integer 0-100>,
+  "tier": "<CRITICAL|HIGH|MEDIUM|LOW>",
+  "reasoning": "<1-3 sentence explanation>"
+}
+
+Scoring guidance:
+- 80-100 (CRITICAL): Multiple contact methods, strong online presence, high category value, positive signals
+- 60-79 (HIGH): Good contact data, decent web presence, clear category fit  
+- 40-59 (MEDIUM): Partial contact data, limited online presence or unclear fit
+- 0-39 (LOW): Missing contacts, no website, very low rating or unknown category
+
+Factors (in rough weight order):
+1. Contact completeness: phone + email > phone or email > neither
+2. Website status: healthy > exists but issues > no website
+3. Rating and review count: high rating with many reviews is very positive
+4. Category value: e.g. law firms, dentists, architects score higher than vague categories
+5. Intel summary: positive signals from crawled website boost score
+6. Location data: having city/country adds trustworthiness`;
+
+function getContactStatus(
+  phone?: string | null,
+  email?: string | null,
+): string {
+  if (phone && email) return "phone + email";
+  if (phone) return "phone only";
+  if (email) return "email only";
+  return "none";
+}
+
+function getRatingLine(
+  rating?: number | null,
+  reviewCount?: number | null,
+): string | null {
+  if (typeof rating !== "number") return null;
+  const suffix =
+    typeof reviewCount === "number" ? ` (${reviewCount} reviews)` : "";
+  return `Rating: ${rating.toFixed(1)}${suffix}`;
+}
+
+function buildLeadScorePrompt(input: AiScoreLeadInput["lead"]): string {
+  const lines = [
+    `Business name: ${input.name}`,
+    input.category ? `Category: ${input.category}` : null,
+    (input.city ?? input.country)
+      ? `Location: ${[input.city, input.country].filter(Boolean).join(", ")}`
+      : "Location: unknown",
+    input.website ? `Website: ${input.website}` : "Website: none",
+    input.websiteStatus ? `Website status: ${input.websiteStatus}` : null,
+    `Contacts: ${getContactStatus(input.phone, input.email)}`,
+    getRatingLine(input.rating, input.reviewCount),
+    input.score !== null && input.score !== undefined
+      ? `Rule-based score: ${input.score}/100`
+      : null,
+    input.tags?.length ? `Tags: ${input.tags.join(", ")}` : null,
+    input.intelSummary ? `Intel summary:\n${input.intelSummary}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return `Evaluate this lead:\n\n${lines}`;
+}
+
+function clampLeadScore(n: unknown): number {
+  let v: number;
+  if (typeof n === "number") {
+    v = n;
+  } else if (typeof n === "string") {
+    v = Number.parseFloat(n);
+  } else {
+    v = Number.NaN;
+  }
+  if (Number.isNaN(v)) return 50;
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+function scoreToTier(score: number): AiScoreLeadResult["tier"] {
+  if (score >= 80) return "CRITICAL";
+  if (score >= 60) return "HIGH";
+  if (score >= 40) return "MEDIUM";
+  return "LOW";
+}
+
+const VALID_TIERS = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+
+export async function scoreLeadWithAi(
+  args: AiScoreLeadInput,
+): Promise<AiScoreLeadResult> {
+  const result = await aiComplete({
+    taskKind: "lead.score",
+    organizationId: args.organizationId,
+    temperature: 0.1,
+    maxTokens: 300,
+    jsonMode: true,
+    messages: [
+      { role: "system", content: AI_SCORE_SYSTEM },
+      { role: "user", content: buildLeadScorePrompt(args.lead) },
+    ],
+  });
+
+  let parsed: { score?: unknown; tier?: unknown; reasoning?: unknown } = {};
+  try {
+    const text = result.text.trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end !== -1) {
+      parsed = JSON.parse(text.slice(start, end + 1)) as typeof parsed;
+    }
+  } catch {
+    // fallback to defaults below
+  }
+
+  const score = clampLeadScore(parsed.score);
+  const tier =
+    typeof parsed.tier === "string" && VALID_TIERS.has(parsed.tier)
+      ? (parsed.tier as AiScoreLeadResult["tier"])
+      : scoreToTier(score);
+  const reasoning =
+    typeof parsed.reasoning === "string" && parsed.reasoning.trim().length > 0
+      ? parsed.reasoning.trim()
+      : "Score derived from available lead data.";
+
+  return {
+    score,
+    tier,
+    reasoning,
+    usage: result.usage,
+    provider: result.provider,
+    model: result.model,
+  };
+}

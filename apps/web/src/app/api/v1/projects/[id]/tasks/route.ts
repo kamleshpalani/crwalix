@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { CreateProjectTaskSchema } from "@crawlix/shared";
-import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
+import {
+  requireOrg,
+  isResponse,
+  isAuthError,
+  hasProjectAccess,
+  requireRole,
+} from "@/lib/auth";
 import { projectKickoffService } from "@/server/services/project-kickoff.service";
 
 export async function GET(
@@ -23,6 +29,8 @@ export async function POST(
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  const denied = requireRole(ctx, hasProjectAccess);
+  if (denied) return denied;
   const body = await req.json().catch(() => null);
   const parsed = CreateProjectTaskSchema.safeParse(body);
   if (!parsed.success) {

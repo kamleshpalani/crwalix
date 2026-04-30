@@ -3,37 +3,35 @@
  * discovery adapters. Each file implements the `LeadProvider` contract
  * defined in `./types.ts`.
  *
- * MVP-ready providers:
- *   - googlePlacesProvider
- *   - yelpProvider
- *   - openStreetMapProvider
- *
- * Coming-soon stubs (throw on use until implemented):
- *   - foursquareProvider
- *   - bingProvider
- *   - hereProvider
- *   - tomtomProvider
- *   - geoapifyProvider
+ * Ready providers:
+ *   - googlePlacesProvider  (Google Places API New)
+ *   - yelpProvider          (Yelp Fusion)
+ *   - openStreetMapProvider (Overpass + Nominatim, keyless)
+ *   - foursquareProvider    (Foursquare Places v3)
+ *   - bingProvider          (Bing Maps Local Search)
+ *   - hereProvider          (HERE Discover API)
+ *   - tomtomProvider        (TomTom Search API v2)
+ *   - geoapifyProvider      (Geoapify Places API v2)
  */
-export * from './types';
-export { googlePlacesProvider } from './googlePlacesProvider';
-export { yelpProvider } from './yelpProvider';
-export { openStreetMapProvider } from './openStreetMapProvider';
-export { foursquareProvider } from './foursquareProvider';
-export { bingProvider } from './bingProvider';
-export { hereProvider } from './hereProvider';
-export { tomtomProvider } from './tomtomProvider';
-export { geoapifyProvider } from './geoapifyProvider';
+export * from "./types";
+export { googlePlacesProvider } from "./googlePlacesProvider";
+export { yelpProvider } from "./yelpProvider";
+export { openStreetMapProvider } from "./openStreetMapProvider";
+export { foursquareProvider } from "./foursquareProvider";
+export { bingProvider } from "./bingProvider";
+export { hereProvider } from "./hereProvider";
+export { tomtomProvider } from "./tomtomProvider";
+export { geoapifyProvider } from "./geoapifyProvider";
 
-import type { LeadProvider } from './types';
-import { googlePlacesProvider } from './googlePlacesProvider';
-import { yelpProvider } from './yelpProvider';
-import { openStreetMapProvider } from './openStreetMapProvider';
-import { foursquareProvider } from './foursquareProvider';
-import { bingProvider } from './bingProvider';
-import { hereProvider } from './hereProvider';
-import { tomtomProvider } from './tomtomProvider';
-import { geoapifyProvider } from './geoapifyProvider';
+import type { LeadProvider } from "./types";
+import { googlePlacesProvider } from "./googlePlacesProvider";
+import { yelpProvider } from "./yelpProvider";
+import { openStreetMapProvider } from "./openStreetMapProvider";
+import { foursquareProvider } from "./foursquareProvider";
+import { bingProvider } from "./bingProvider";
+import { hereProvider } from "./hereProvider";
+import { tomtomProvider } from "./tomtomProvider";
+import { geoapifyProvider } from "./geoapifyProvider";
 
 /** Ordered list of every known provider, ready or not. */
 export const ALL_LEAD_PROVIDERS: LeadProvider[] = [
@@ -44,7 +42,7 @@ export const ALL_LEAD_PROVIDERS: LeadProvider[] = [
   bingProvider,
   hereProvider,
   tomtomProvider,
-  geoapifyProvider
+  geoapifyProvider,
 ];
 
 /** Look up a provider by id; returns undefined if not registered. */

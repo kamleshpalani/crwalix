@@ -48,6 +48,7 @@ export async function GET(req: Request) {
       country: true,
       aiUsageLimit: true,
       leadSearchLimit: true,
+      requireMfa: true,
       createdAt: true,
     },
   });
@@ -63,6 +64,7 @@ const Patch = z.object({
   plan: z.enum(["FREE", "STARTER", "GROWTH", "SCALE"]).optional(),
   aiUsageLimit: z.number().int().min(0).nullish(),
   leadSearchLimit: z.number().int().min(0).nullish(),
+  requireMfa: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -103,6 +105,7 @@ export async function PATCH(req: Request) {
       plan: true,
       aiUsageLimit: true,
       leadSearchLimit: true,
+      requireMfa: true,
     },
   });
   await auditService.record({
