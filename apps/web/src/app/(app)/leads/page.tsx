@@ -126,6 +126,22 @@ export default async function LeadsPage({
                           {[l.categoryPrimary, l.city, l.state, l.country]
                             .filter(Boolean)
                             .join(" · ")}
+                          {l.provider && l.provider !== "manual" && (
+                            <span className="ml-1.5 text-ink-400">
+                              via{" "}
+                              {({
+                                google_places: "Google",
+                                yelp_fusion: "Yelp",
+                                osm: "OSM",
+                                foursquare: "Foursquare",
+                                bing: "Bing",
+                                here: "HERE",
+                                tomtom: "TomTom",
+                                geoapify: "Geoapify",
+                                csv_import: "CSV",
+                              } as Record<string, string>)[l.provider] ?? l.provider}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           {(() => {
