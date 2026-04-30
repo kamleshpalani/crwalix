@@ -298,6 +298,89 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     return;
   }
 
+  // Module #15 — Checkout Session for self-hosted invoices.
+  // Created via /api/v1/payments/checkout/share/[token]; carries
+  // metadata.crawlix_invoice_id to identify the local invoice.
+  if (type === "checkout.session.completed") {
+    const sess = event.data.object as Stripe.Checkout.Session;
+    const invoiceId =
+      (sess.metadata?.crawlix_invoice_id as string | undefined) ?? null;
+    if (!invoiceId) {
+      console.log(
+        "[webhook] checkout.session.completed without crawlix_invoice_id",
+      );
+      return;
+    }
+    if (sess.payment_status !== "paid") {
+      console.log(
+        `[webhook] checkout.session ${sess.id} payment_status=${sess.payment_status}`,
+      );
+      return;
+    }
+    const inv = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        organizationId: true,
+        status: true,
+        totalCents: true,
+        amountPaidCents: true,
+        currency: true,
+      },
+    });
+    if (!inv) {
+      console.warn(`[webhook] invoice ${invoiceId} not found`);
+      return;
+    }
+    if (inv.status === "PAID") return;
+    const remaining = Math.max(0, inv.totalCents - inv.amountPaidCents);
+    await prisma.invoice.update({
+      where: { id: inv.id },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+        amountPaidCents: inv.totalCents,
+        amountDueCents: 0,
+        payments: {
+          create: {
+            organizationId: inv.organizationId,
+            status: "SUCCEEDED",
+            currency: inv.currency,
+            amountCents: remaining > 0 ? remaining : inv.totalCents,
+            stripePaymentIntentId:
+              typeof sess.payment_intent === "string"
+                ? sess.payment_intent
+                : null,
+            paidAt: new Date(),
+            metadata: {
+              source: "stripe_checkout",
+              session_id: sess.id,
+            } as unknown as object,
+          },
+        },
+      },
+    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: inv.organizationId,
+          action: "invoice.paid_stripe",
+          target: inv.id,
+          metadata: {
+            session_id: sess.id,
+            payment_intent:
+              typeof sess.payment_intent === "string"
+                ? sess.payment_intent
+                : null,
+          } as unknown as object,
+        },
+      });
+    } catch (err) {
+      console.warn("[webhook] audit write failed", err);
+    }
+    return;
+  }
+
   // Add more event types as needed (charge.refunded, etc.)
   console.log(`[webhook] unhandled event type: ${type}`);
 }

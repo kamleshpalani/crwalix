@@ -23,6 +23,28 @@ enum Role {
   MEMBER
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  DELETED
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  DELETED
+}
+
+enum BillingStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  NONE
+}
+
 enum Plan {
   FREE
   STARTER
@@ -111,7 +133,14 @@ model User {
   clerkId     String   @unique
   email       String   @unique
   fullName    String?
+  firstName   String?
+  lastName    String?
+  phone       String?
   avatarUrl   String?
+  status      UserStatus @default(ACTIVE)
+  /// Platform-level Super Admin (cross-tenant). Distinct from per-org Role.
+  isSuperAdmin Boolean  @default(false)
+  lastLoginAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   memberships OrganizationMember[]
@@ -124,6 +153,21 @@ model Organization {
   clerkOrgId       String?  @unique
   name             String
   plan             Plan     @default(FREE)
+  status           OrgStatus @default(ACTIVE)
+  billingStatus    BillingStatus @default(NONE)
+  /// Public company contact info (Section 6.2).
+  companyEmail     String?
+  companyPhone     String?
+  website          String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  postalCode       String?
+  country          String?
+  /// Soft caps enforced by the usage layer; null = unlimited.
+  aiUsageLimit     Int?
+  leadSearchLimit  Int?
   stripeCustomerId String?  @unique
   /// Optional outbound webhook fired when newly-discovered leads arrive
   /// from a scheduled search. Slack-compatible incoming webhooks work too.
@@ -204,6 +248,8 @@ model Project {
   searches       Search[]
   leadLists      LeadList[]
   tasks          ProjectTask[]
+  milestones     Milestone[]
+  files          ProjectFile[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -231,6 +277,96 @@ model ProjectTask {
 
   @@index([organizationId, projectId, position])
   @@index([organizationId, status])
+}
+
+/// Billable checkpoint within a Project. When marked COMPLETED with
+/// `autoInvoice=true`, the worker auto-creates a Stripe invoice for
+/// `amountCents`. Tracks the resulting invoice for idempotency.
+model Milestone {
+  id              String   @id @default(uuid())
+  organizationId  String
+  projectId       String
+  title           String
+  description     String?
+  /// PENDING | IN_PROGRESS | COMPLETED | CANCELED.
+  status          String   @default("PENDING")
+  /// Display order within the project.
+  position        Int      @default(0)
+  /// Billable amount for this milestone in cents. 0 = non-billable checkpoint.
+  amountCents     Int      @default(0)
+  currency        String   @default("USD")
+  /// When true, completing the milestone auto-creates an Invoice.
+  autoInvoice     Boolean  @default(false)
+  /// Idempotency: invoice generated when this milestone was completed.
+  invoiceId       String?  @unique
+  dueAt           DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, position])
+  @@index([organizationId, status])
+}
+
+/// File attached to a project. Actual bytes live in Supabase Storage; this
+/// table stores metadata + the canonical storage path. Public access is
+/// served via short-lived signed URLs (see `apps/web/src/server/services/file.service.ts`).
+model ProjectFile {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  /// Storage bucket + path (e.g., "project-files/<orgId>/<projectId>/<uuid>-name.pdf").
+  /// Bucket is implicit (single bucket per env via SUPABASE_STORAGE_BUCKET).
+  storagePath    String   @unique
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  /// SHA-256 of file contents — for dedupe and integrity checks.
+  contentHash    String?
+  uploadedById   String
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId, createdAt])
+}
+
+/// Persistent grant: an external email is allowed read access to a Project
+/// via the client portal. Created when the project owner invites a client.
+/// Multiple grants per project are allowed (e.g., point-of-contact + boss).
+model PortalAccess {
+  id             String   @id @default(uuid())
+  organizationId String
+  projectId      String
+  email          String
+  /// Display name (optional — falls back to email).
+  name           String?
+  /// PENDING (invited, not yet logged in) | ACTIVE | REVOKED.
+  status         String   @default("PENDING")
+  invitedById    String
+  invitedAt      DateTime @default(now())
+  lastLoginAt    DateTime?
+  revokedAt      DateTime?
+
+  @@unique([projectId, email])
+  @@index([organizationId, projectId])
+  @@index([email])
+}
+
+/// One-shot magic link token. SHA-256 hash of the random secret is stored.
+/// Consumed (deleted) on first successful verification.
+model PortalLoginToken {
+  id             String   @id @default(uuid())
+  organizationId String
+  portalAccessId String
+  /// SHA-256 hex of the secret. Raw secret never persisted.
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([portalAccessId])
+  @@index([expiresAt])
 }
 
 model Search {
@@ -338,6 +474,20 @@ model Lead {
   businessScaleConfidence Int?
   /// Contributing signals + raw bucket scores from the classifier.
   businessScaleSignals Json?
+  /// User-facing industry (free-form, distinct from auto-derived categories).
+  industry          String?
+  /// Operating hours payload (provider-specific JSON, normalized when possible).
+  openingHours      Json?
+  /// User this lead is assigned to (sales rep). FK to internal User.id, nullable.
+  assignedUserId    String?
+  /// CRM pipeline stage on the lead itself (independent of any Deal).
+  crmStage          String?
+  /// 0–100 multi-channel digital presence score (website + social + reviews).
+  digitalPresenceScore Int?
+  /// Convenience copy of Google Place ID when provider=google_places.
+  googlePlaceId     String?
+  /// Convenience copy of Yelp business ID when provider=yelp_fusion.
+  yelpBusinessId    String?
   status            LeadStatus     @default(NEW)
   notes             String?
   tags              String[]       @default([])
@@ -352,12 +502,43 @@ model Lead {
   enrichments       Enrichment[]
   scores            LeadScore[]
   listMemberships   LeadListItem[]
+  mergeHistoryAsCanonical LeadMergeHistory[] @relation("LeadMergeCanonical")
 
   @@unique([organizationId, provider, externalPlaceId])
   @@index([organizationId, nameNormalized])
   @@index([organizationId, phoneNormalized])
   @@index([organizationId, websiteStatus])
   @@index([organizationId, priorityTier, score])
+  @@index([organizationId, emailNormalized])
+  @@index([organizationId, assignedUserId])
+  @@index([organizationId, crmStage])
+  @@index([organizationId, googlePlaceId])
+  @@index([organizationId, yelpBusinessId])
+}
+
+/// Audit trail of cross-provider lead merges. One row per duplicate hit
+/// folded into a canonical lead. Lets us replay merges and prove the same
+/// physical business wasn't double-charged against the org's quota.
+model LeadMergeHistory {
+  id                String   @id @default(uuid())
+  organizationId    String
+  canonicalLeadId   String
+  /// Reason: 'exact' | 'phone' | 'website' | 'name_address' | 'name_geo' | 'email' | 'place_id' | 'manual'.
+  reason            String
+  /// 0..1 match confidence at merge time.
+  confidence        Float
+  /// Provider that produced the duplicate hit (google_places, yelp_fusion, ...).
+  fromProvider      String?
+  /// External place id from the duplicate hit, if any.
+  fromExternalId    String?
+  /// Snapshot of the incoming normalized lead payload.
+  payload           Json?
+  createdAt         DateTime @default(now())
+
+  canonical         Lead     @relation("LeadMergeCanonical", fields: [canonicalLeadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, canonicalLeadId])
+  @@index([canonicalLeadId, createdAt])
 }
 
 model LeadSource {
@@ -1068,6 +1249,12 @@ model Invoice {
   hostedUrl            String?
   /// PDF download URL from Stripe or self-generated.
   pdfUrl               String?
+  /// Module #14 — self-hosted invoice fields (set when created in-app, not via Stripe).
+  title                String?
+  customerName         String?
+  customerEmail        String?
+  /// Public share token for self-hosted invoice viewing/payment page.
+  shareToken           String?       @unique
   metadata             Json?
   createdById          String?
   createdAt            DateTime      @default(now())
@@ -1131,5 +1318,221 @@ model CostBudget {
   updatedAt              DateTime @updatedAt
 
   @@index([organizationId])
+}
+
+// =============================================================================
+// Support inbox + KB — Phase 4.4 / 4.5
+// FK + RLS in 0021_support.sql.
+// =============================================================================
+
+/// Customer-facing knowledge base article. Embeddings cached as Float[] so we
+/// can do in-memory cosine similarity without requiring pgvector.
+model KnowledgeArticle {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  content        String
+  sourceUrl      String?
+  /// 1536-dim text-embedding-3-small vector. Empty until ingest finishes.
+  embedding      Float[]  @default([])
+  /// Free-form tags for filtering inside the support agent context window.
+  tags           String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, updatedAt])
+}
+
+/// Inbound or outbound support thread. One ticket per customer issue.
+model SupportTicket {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Optional originating lead. Customers without lead records get null.
+  leadId         String?
+  subject        String
+  /// OPEN | PENDING | RESOLVED | CLOSED. Plain text — no enum migration needed.
+  status         String   @default("OPEN")
+  /// Channel hint: email | portal | manual.
+  channel        String   @default("manual")
+  /// Optional human assignee for handoff workflows.
+  assignedUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  messages       SupportMessage[]
+
+  @@index([organizationId, status, updatedAt])
+  @@index([organizationId, leadId])
+}
+
+/// One row per turn in a support thread. Authored by the user, the AI agent,
+/// or a human teammate.
+model SupportMessage {
+  id             String   @id @default(uuid())
+  organizationId String
+  ticketId       String
+  /// USER | AI | AGENT
+  role           String
+  content        String
+  /// AI confidence 0..1; null for human messages.
+  confidence     Float?
+  /// IDs of KnowledgeArticle rows the AI cited; empty for non-AI rows.
+  citedArticleIds String[] @default([])
+  /// True when the AI judged itself unfit and asked for a human.
+  needsHandoff   Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticketId, createdAt])
+}
+
+// =============================================================================
+// Quotes — Module #10. FK + RLS in 0022_quotes.sql.
+// =============================================================================
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model Quote {
+  id             String      @id @default(uuid())
+  organizationId String
+  /// Optional CRM context.
+  dealId         String?
+  leadId         String?
+  projectId      String?
+  /// Human-readable e.g. Q-0042 (org-scoped sequential).
+  number         String?
+  title          String
+  status         QuoteStatus @default(DRAFT)
+  currency       String      @default("USD")
+  /// Sub-total (sum of line totals).
+  subtotalCents  Int         @default(0)
+  /// Discount applied to subtotal (absolute cents).
+  discountCents  Int         @default(0)
+  /// Tax rate in basis points (e.g. 800 = 8.00%).
+  taxRateBps     Int         @default(0)
+  taxCents       Int         @default(0)
+  totalCents     Int         @default(0)
+  notes          String?
+  terms          String?
+  /// Public share token for customer accept/decline page.
+  shareToken     String?     @unique
+  validUntil     DateTime?
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  declinedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  lineItems      QuoteLineItem[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
+model QuoteLineItem {
+  id             String  @id @default(uuid())
+  organizationId String
+  quoteId        String
+  position       Int     @default(0)
+  description    String
+  /// Quantity * 1000 (3-decimal precision packed as int).
+  quantityMilli  Int     @default(1000)
+  unitPriceCents Int     @default(0)
+  lineTotalCents Int     @default(0)
+  createdAt      DateTime @default(now())
+  quote          Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, quoteId, position])
+}
+
+// =============================================================================
+// Contracts — Module #11. FK + RLS in 0023_contracts.sql.
+// Lightweight in-app e-sign: customer types name + clicks Accept on a public
+// share link; we capture name, IP, user-agent, timestamp, and a SHA-256 hash
+// of the body at signing time as tamper-evidence.
+// =============================================================================
+
+enum ContractStatus {
+  DRAFT
+  SENT
+  SIGNED
+  DECLINED
+  CANCELED
+  EXPIRED
+}
+
+model Contract {
+  id             String         @id @default(uuid())
+  organizationId String
+  /// Optional CRM context.
+  dealId         String?
+  leadId         String?
+  projectId      String?
+  quoteId        String?
+  /// Org-scoped sequential e.g. C-0042.
+  number         String?
+  title          String
+  status         ContractStatus @default(DRAFT)
+  /// Markdown or HTML body. Server-side stored verbatim — what was rendered
+  /// to the customer at sign-time is locked once SIGNED.
+  bodyMarkdown   String
+  /// Counterparty contact for routing the share link.
+  counterpartyName  String?
+  counterpartyEmail String?
+  /// Public share token for the customer-facing page.
+  shareToken     String?        @unique
+  /// SHA-256 of bodyMarkdown captured at the moment of signing. Empty until
+  /// SIGNED. Used as a simple tamper-evidence check.
+  bodyHashAtSign String?
+  /// Typed name from the customer. Locked once SIGNED.
+  signedName     String?
+  signedAt       DateTime?
+  signedIp       String?
+  signedUserAgent String?
+  declinedAt     DateTime?
+  expiresAt      DateTime?
+  sentAt         DateTime?
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, dealId])
+  @@index([organizationId, projectId])
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+/// Module #21 — third-party integration connections per organization.
+model Integration {
+  id             String            @id @default(uuid())
+  organizationId String
+  /// Stable provider key e.g. slack, hubspot, gmail.
+  provider       String
+  status         IntegrationStatus @default(DISCONNECTED)
+  /// Human label displayed in the UI (e.g. workspace/account name).
+  accountLabel   String?
+  /// Sensitive credentials. Never returned to the client untransformed.
+  credentials    Json?
+  /// Non-sensitive provider config (toggles, scopes, default folder, etc).
+  config         Json?
+  lastError      String?
+  lastSyncedAt   DateTime?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, status])
 }
 

@@ -70,7 +70,17 @@ export default async function PipelinePage({
             {deals.length.toLocaleString()} open · {active.name}
           </span>
         }
-        actions={<NewDealButton pipeline={active} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <a
+              href={`/pipeline/forecast?pipelineId=${active.id}`}
+              className="rounded-full border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
+            >
+              Forecast
+            </a>
+            <NewDealButton pipeline={active} />
+          </div>
+        }
       />
 
       <PipelineBoard pipeline={active} deals={deals} />

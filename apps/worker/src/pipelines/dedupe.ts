@@ -9,46 +9,56 @@
  * unique — when a match is found we update the existing row in place and
  * record an extra `LeadSource` so we know which providers contributed.
  */
-import type { Prisma } from '@prisma/client';
-import type { NormalizedLead } from '@crawlix/shared';
+import type { Prisma } from "@prisma/client";
+import type { NormalizedLead } from "@crawlix/shared";
 
 export type CandidateMatch = {
   leadId: string;
-  reason: 'phone' | 'website' | 'name_address' | 'name_geo' | 'exact';
+  reason:
+    | "phone"
+    | "website"
+    | "name_address"
+    | "name_geo"
+    | "exact"
+    | "email"
+    | "place_id";
   confidence: number; // 0..1
 };
 
 const PHONE_DIGITS = /\d+/g;
 
 export function digitsOnly(s: string | null | undefined): string {
-  if (!s) return '';
-  return (s.match(PHONE_DIGITS) ?? []).join('');
+  if (!s) return "";
+  return (s.match(PHONE_DIGITS) ?? []).join("");
 }
 
 export function websiteHost(s: string | null | undefined): string | null {
   if (!s) return null;
   try {
     const u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
-    return u.hostname.replace(/^www\./i, '').toLowerCase();
+    return u.hostname.replace(/^www\./i, "").toLowerCase();
   } catch {
     return null;
   }
 }
 
 export function normalizeName(s: string | null | undefined): string {
-  if (!s) return '';
+  if (!s) return "";
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
 export function normalizeAddress(s: string | null | undefined): string {
-  if (!s) return '';
+  if (!s) return "";
   return s
     .toLowerCase()
-    .replace(/\b(street|st|road|rd|avenue|ave|boulevard|blvd|drive|dr|lane|ln|suite|ste|apt|unit|floor|fl)\b\.?/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(
+      /\b(street|st|road|rd|avenue|ave|boulevard|blvd|drive|dr|lane|ln|suite|ste|apt|unit|floor|fl)\b\.?/g,
+      "",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
@@ -65,7 +75,7 @@ export function jaccard(a: string, b: string): number {
 /** Great-circle distance between two lat/lng points in meters. */
 export function haversineMeters(
   a: { lat: number; lng: number },
-  b: { lat: number; lng: number }
+  b: { lat: number; lng: number },
 ): number {
   const R = 6_371_000;
   const toRad = (x: number) => (x * Math.PI) / 180;
@@ -88,12 +98,51 @@ export function haversineMeters(
 export async function findDuplicateLead(
   tx: Prisma.TransactionClient,
   organizationId: string,
-  candidate: NormalizedLead
+  candidate: NormalizedLead,
 ): Promise<CandidateMatch | null> {
   const phoneDigits = digitsOnly(candidate.phone);
   const host = websiteHost(candidate.website);
   const nameKey = normalizeName(candidate.name);
   const addrKey = normalizeAddress(candidate.address);
+  const emailNorm = candidate.email?.toLowerCase().trim() || null;
+
+  // 0. Provider-specific place IDs (Google Place ID / Yelp business ID).
+  //    These are stable identifiers; an exact match means same business
+  //    even if surfaced via a different provider record.
+  if (candidate.provider === "google_places" && candidate.externalPlaceId) {
+    const byPlace = await tx.lead.findFirst({
+      where: {
+        organizationId,
+        googlePlaceId: candidate.externalPlaceId,
+        NOT: {
+          AND: [
+            { provider: candidate.provider },
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    if (byPlace)
+      return { leadId: byPlace.id, reason: "place_id", confidence: 0.99 };
+  }
+  if (candidate.provider === "yelp_fusion" && candidate.externalPlaceId) {
+    const byYelp = await tx.lead.findFirst({
+      where: {
+        organizationId,
+        yelpBusinessId: candidate.externalPlaceId,
+        NOT: {
+          AND: [
+            { provider: candidate.provider },
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    if (byYelp)
+      return { leadId: byYelp.id, reason: "place_id", confidence: 0.99 };
+  }
 
   // 1. Phone match (highest confidence). Compare last 10 digits to
   //    survive country-code differences.
@@ -106,31 +155,50 @@ export async function findDuplicateLead(
         NOT: {
           AND: [
             { provider: candidate.provider },
-            { externalPlaceId: candidate.externalPlaceId }
-          ]
-        }
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
       },
-      select: { id: true }
+      select: { id: true },
     });
-    if (byPhone) return { leadId: byPhone.id, reason: 'phone', confidence: 0.95 };
+    if (byPhone)
+      return { leadId: byPhone.id, reason: "phone", confidence: 0.95 };
   }
-
+  // 1b. Email match.
+  if (emailNorm && emailNorm.includes("@")) {
+    const byEmail = await tx.lead.findFirst({
+      where: {
+        organizationId,
+        emailNormalized: emailNorm,
+        NOT: {
+          AND: [
+            { provider: candidate.provider },
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    if (byEmail)
+      return { leadId: byEmail.id, reason: "email", confidence: 0.92 };
+  }
   // 2. Website hostname match.
   if (host) {
     const byWebsite = await tx.lead.findFirst({
       where: {
         organizationId,
-        website: { contains: host, mode: 'insensitive' },
+        website: { contains: host, mode: "insensitive" },
         NOT: {
           AND: [
             { provider: candidate.provider },
-            { externalPlaceId: candidate.externalPlaceId }
-          ]
-        }
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
       },
-      select: { id: true }
+      select: { id: true },
     });
-    if (byWebsite) return { leadId: byWebsite.id, reason: 'website', confidence: 0.9 };
+    if (byWebsite)
+      return { leadId: byWebsite.id, reason: "website", confidence: 0.9 };
   }
 
   // 3 + 4. Name similarity, narrowed by city when available.
@@ -142,23 +210,23 @@ export async function findDuplicateLead(
         NOT: {
           AND: [
             { provider: candidate.provider },
-            { externalPlaceId: candidate.externalPlaceId }
-          ]
-        }
+            { externalPlaceId: candidate.externalPlaceId },
+          ],
+        },
       },
       select: {
         id: true,
         nameNormalized: true,
         addressNormalized: true,
         lat: true,
-        lng: true
+        lng: true,
       },
-      take: 200
+      take: 200,
     });
 
     let best: CandidateMatch | null = null;
     for (const c of candidates) {
-      const nameSim = jaccard(nameKey, c.nameNormalized ?? '');
+      const nameSim = jaccard(nameKey, c.nameNormalized ?? "");
       if (nameSim < 0.55) continue;
 
       // 3. Name + address.
@@ -167,7 +235,7 @@ export async function findDuplicateLead(
         if (nameSim >= 0.7 && addrSim >= 0.6) {
           const conf = Math.min(1, 0.4 + 0.4 * nameSim + 0.2 * addrSim);
           if (!best || conf > best.confidence) {
-            best = { leadId: c.id, reason: 'name_address', confidence: conf };
+            best = { leadId: c.id, reason: "name_address", confidence: conf };
           }
           continue;
         }
@@ -175,19 +243,19 @@ export async function findDuplicateLead(
 
       // 4. Name + coordinates within ~150m.
       if (
-        typeof candidate.lat === 'number' &&
-        typeof candidate.lng === 'number' &&
-        typeof c.lat === 'number' &&
-        typeof c.lng === 'number'
+        typeof candidate.lat === "number" &&
+        typeof candidate.lng === "number" &&
+        typeof c.lat === "number" &&
+        typeof c.lng === "number"
       ) {
         const d = haversineMeters(
           { lat: candidate.lat, lng: candidate.lng },
-          { lat: c.lat, lng: c.lng }
+          { lat: c.lat, lng: c.lng },
         );
         if (d <= 150 && nameSim >= 0.65) {
           const conf = Math.min(1, 0.5 + 0.3 * nameSim + (150 - d) / 1500);
           if (!best || conf > best.confidence) {
-            best = { leadId: c.id, reason: 'name_geo', confidence: conf };
+            best = { leadId: c.id, reason: "name_geo", confidence: conf };
           }
         }
       }
@@ -207,6 +275,8 @@ export function buildMergeData(
   existing: {
     phone: string | null;
     phoneNormalized: string | null;
+    email: string | null;
+    emailNormalized: string | null;
     website: string | null;
     websiteStatus: string;
     rating: number | null;
@@ -216,7 +286,7 @@ export function buildMergeData(
     categories: string[];
     sourceUrl: string | null;
   },
-  incoming: NormalizedLead
+  incoming: NormalizedLead,
 ): Prisma.LeadUpdateInput {
   const data: Prisma.LeadUpdateInput = { lastSeenAt: new Date() };
 
@@ -238,14 +308,14 @@ export function buildMergeData(
     const incomingHost = websiteHost(incoming.website);
     if (!existingHost && incomingHost) {
       data.website = incoming.website;
-      data.websiteStatus = 'EXISTS';
+      data.websiteStatus = "EXISTS";
     }
   }
 
   // Rating + reviewCount: prefer the source with more reviews (more
   // statistically reliable).
   if (
-    typeof incoming.reviewCount === 'number' &&
+    typeof incoming.reviewCount === "number" &&
     incoming.reviewCount > (existing.reviewCount ?? -1)
   ) {
     data.rating = incoming.rating ?? existing.rating;
@@ -260,12 +330,21 @@ export function buildMergeData(
 
   // Categories: union.
   if (incoming.categories?.length) {
-    const set = new Set([...(existing.categories ?? []), ...incoming.categories]);
+    const set = new Set([
+      ...(existing.categories ?? []),
+      ...incoming.categories,
+    ]);
     data.categories = { set: Array.from(set) };
   }
 
   if (!existing.sourceUrl && incoming.sourceUrl) {
     data.sourceUrl = incoming.sourceUrl;
+  }
+
+  // Email: take incoming if existing has none.
+  if (incoming.email && !existing.email) {
+    data.email = incoming.email;
+    data.emailNormalized = incoming.email.toLowerCase().trim();
   }
 
   return data;

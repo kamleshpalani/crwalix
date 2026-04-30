@@ -11,7 +11,8 @@ export type AiTaskKind =
   | "reply.classify"
   | "outreach.email"
   | "report.weekly"
-  | "support.answer";
+  | "support.answer"
+  | "search.parse";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";
