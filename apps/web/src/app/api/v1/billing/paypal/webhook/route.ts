@@ -97,13 +97,13 @@ async function handleCaptureCompleted(event: PayPalEvent): Promise<void> {
   });
 
   await emitNotification({
-    orgId: invoice.organizationId,
+    organizationId: invoice.organizationId,
     kind: NotificationKind.PAYMENT_RECEIVED,
     title: invoice.number
       ? `Payment received for invoice ${invoice.number}`
       : "Payment received",
     body: `${(amountCents / 100).toFixed(2)} ${currency} captured via PayPal.`,
-    metadata: {
+    data: {
       invoiceId: invoice.id,
       provider: "paypal",
       captureId,
