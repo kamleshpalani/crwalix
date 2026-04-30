@@ -287,6 +287,7 @@ export const leadsService = {
   /**
    * Update user-editable contact fields on a lead. Only fields explicitly
    * present in the patch are touched; empty strings clear nullable fields.
+   * Records a LeadFieldHistory row for each changed field.
    */
   async patchContact(
     orgId: string,
@@ -302,6 +303,7 @@ export const leadsService = {
       address?: string | null;
       postalCode?: string | null;
     },
+    options?: { changedBy?: string; source?: string },
   ) {
     const data: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(patch)) {
@@ -309,7 +311,40 @@ export const leadsService = {
       data[k] = v;
     }
     if (Object.keys(data).length === 0) return null;
-    return withOrg(orgId, (tx) => tx.lead.update({ where: { id }, data }));
+    return withOrg(orgId, async (tx) => {
+      // Fetch current values to diff
+      const existing = await tx.lead.findFirst({
+        where: { id },
+        select: Object.fromEntries(
+          Object.keys(data).map((k) => [k, true]),
+        ) as Record<string, true>,
+      });
+      const updated = await tx.lead.update({ where: { id }, data });
+      // Record history for each changed field
+      if (existing) {
+        const historyRows = Object.keys(data)
+          .filter(
+            (k) =>
+              String((existing as Record<string, unknown>)[k] ?? "") !==
+              String((data[k] as unknown) ?? ""),
+          )
+          .map((field) => ({
+            organizationId: orgId,
+            leadId: id,
+            field,
+            oldValue: String(
+              (existing as Record<string, unknown>)[field] ?? "",
+            ),
+            newValue: String((data[field] as unknown) ?? ""),
+            changedBy: options?.changedBy ?? null,
+            source: options?.source ?? "user",
+          }));
+        if (historyRows.length > 0) {
+          await tx.leadFieldHistory.createMany({ data: historyRows });
+        }
+      }
+      return updated;
+    });
   },
 
   async addTag(orgId: string, id: string, tag: string) {

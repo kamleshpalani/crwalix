@@ -1,4 +1,9 @@
-import type { PriorityTier, WebsiteStatus, WebsiteHealth, BusinessStatus } from '@crawlix/shared';
+import type {
+  PriorityTier,
+  WebsiteStatus,
+  WebsiteHealth,
+  BusinessStatus,
+} from "@crawlix/shared";
 
 /** Minimum lead shape the scoring engine needs. */
 export interface ScorableLead {
@@ -17,6 +22,10 @@ export interface ScorableLead {
   categories: string[];
   phone: string | null | undefined;
   website: string | null | undefined;
+  /** When the lead was first discovered; used for freshness scoring. */
+  firstSeenAt?: Date | string | null;
+  /** When the lead data was last refreshed from the source. */
+  lastSeenAt?: Date | string | null;
 }
 
 export interface ScoreContribution {
