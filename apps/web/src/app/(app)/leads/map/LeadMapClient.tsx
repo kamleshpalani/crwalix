@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { Map as LeafletMap } from "leaflet";
 
 export interface MapPin {
   id: string;
@@ -26,7 +27,7 @@ interface LeadMapClientProps {
 
 export default function LeadMapClient({ pins }: LeadMapClientProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<unknown>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
