@@ -11,6 +11,7 @@ import { Worker, type Job } from "bullmq";
 import {
   JobName,
   QueueName,
+  type DsarProcessJob,
   type EnrichmentJob,
   type GenerateProposalJob,
   type IntelBuildJob,
@@ -33,6 +34,7 @@ import { runOutreachSend } from "./pipelines/outreach-send";
 import { runOutreachSequenceTick } from "./pipelines/outreach-sequence-tick";
 import { runOutreachClassifyReply } from "./pipelines/outreach-classify-reply";
 import { runBillingDunning } from "./pipelines/billing-dunning";
+import { runDsarProcess } from "./pipelines/dsar-process";
 import { runWeeklyDigest } from "./pipelines/weekly-digest";
 import { startScheduler } from "./pipelines/scheduler";
 
@@ -122,6 +124,15 @@ const outreachWorker = makeWorker<
   4,
 );
 
+const systemWorker = makeWorker<DsarProcessJob>(
+  QueueName.SYSTEM,
+  async (name, data) => {
+    if (name === JobName.DSAR_PROCESS) return runDsarProcess(data);
+    logger.warn({ name }, "unknown system job");
+  },
+  2,
+);
+
 async function shutdown(sig: string): Promise<void> {
   logger.info({ sig }, "shutting down");
   await Promise.all([
@@ -130,6 +141,7 @@ async function shutdown(sig: string): Promise<void> {
     enrichmentWorker.close(),
     crmWorker.close(),
     outreachWorker.close(),
+    systemWorker.close(),
   ]);
   await connection.quit();
   process.exit(0);

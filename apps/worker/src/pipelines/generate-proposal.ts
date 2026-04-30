@@ -13,7 +13,14 @@ import { logger } from "../lib/logger";
 export async function runGenerateProposal(
   data: GenerateProposalJob,
 ): Promise<void> {
-  const { organizationId, dealId, offering, triggeredByUserId } = data;
+  const {
+    organizationId,
+    dealId,
+    offering,
+    tone,
+    priceBand,
+    triggeredByUserId,
+  } = data;
 
   const deal = await prisma.deal.findFirst({
     where: { id: dealId, organizationId },
@@ -60,6 +67,8 @@ export async function runGenerateProposal(
       intelSummary,
     },
     offering,
+    tone,
+    priceBand,
   });
 
   // Bump version number per (org, deal) so revisions are tracked.

@@ -6,6 +6,10 @@ import { crmService } from "@/server/services/crm.service";
 const BodySchema = z
   .object({
     offering: z.string().min(1).max(500).optional(),
+    tone: z
+      .enum(["professional", "friendly", "concise", "persuasive", "executive"])
+      .optional(),
+    priceBand: z.string().min(1).max(60).optional(),
   })
   .optional();
 
@@ -45,6 +49,7 @@ export async function POST(
     ctx.userId,
     params.id,
     parsed.data?.offering,
+    { tone: parsed.data?.tone, priceBand: parsed.data?.priceBand },
   );
   if (!result) {
     return NextResponse.json(

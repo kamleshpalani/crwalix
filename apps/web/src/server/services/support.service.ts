@@ -12,6 +12,8 @@
 
 import { withOrg } from "@crawlix/db";
 import { embedText, cosineSim, answerSupportQuestion } from "@crawlix/ai";
+import { emitNotification } from "@/server/lib/notify";
+import { NotificationKind } from "./notification-kinds";
 
 const TOP_K = 5;
 const MAX_ARTICLE_BYTES = 32_000;
@@ -187,7 +189,7 @@ async function createTicket(args: CreateTicketArgs): Promise<TicketDto> {
   const subject = args.subject.trim().slice(0, 200);
   if (!subject) throw new Error("subject is required");
 
-  return withOrg(args.orgId, async (tx) => {
+  const dto = await withOrg(args.orgId, async (tx) => {
     const ticket = await tx.supportTicket.create({
       data: {
         organizationId: args.orgId,
@@ -208,6 +210,17 @@ async function createTicket(args: CreateTicketArgs): Promise<TicketDto> {
     }
     return ticketToDto(ticket);
   });
+
+  void emitNotification({
+    organizationId: args.orgId,
+    kind: NotificationKind.TICKET_CREATED,
+    title: `Support ticket: ${dto.subject}`,
+    body: args.initialMessage?.slice(0, 200) ?? "New support ticket opened.",
+    href: `/support/${dto.id}`,
+    data: { ticketId: dto.id, channel: dto.channel },
+  });
+
+  return dto;
 }
 
 async function listTickets(orgId: string): Promise<TicketDto[]> {

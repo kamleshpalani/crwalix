@@ -16,6 +16,10 @@
 
 import Stripe from "stripe";
 
+// PayPal adapter is namespaced to avoid name collisions with Stripe helpers
+// (both have createOrder/captureOrder concepts in different shapes).
+export * as paypal from "./paypal";
+
 let _stripe: Stripe | null = null;
 
 /**

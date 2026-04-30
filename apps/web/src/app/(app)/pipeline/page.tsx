@@ -4,6 +4,7 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import { crmService } from "@/server/services/crm.service";
 import PipelineBoard from "./PipelineBoard";
+import TableView from "./TableView";
 import NewDealButton from "./NewDealButton";
 
 /**
@@ -58,6 +59,32 @@ export default async function PipelinePage({
     sort: "-updatedAt",
   });
 
+  const view =
+    typeof searchParams.view === "string" && searchParams.view === "table"
+      ? "table"
+      : "board";
+
+  const viewToggle = (
+    <div className="flex items-center gap-1 rounded-full border border-ink-200 bg-white px-1 py-0.5 text-xs">
+      <a
+        href={`/pipeline?pipelineId=${active.id}&view=board`}
+        className={`rounded-full px-3 py-1 ${
+          view === "board" ? "bg-ink-900 text-white" : "text-ink-600"
+        }`}
+      >
+        Board
+      </a>
+      <a
+        href={`/pipeline?pipelineId=${active.id}&view=table`}
+        className={`rounded-full px-3 py-1 ${
+          view === "table" ? "bg-ink-900 text-white" : "text-ink-600"
+        }`}
+      >
+        Table
+      </a>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -72,6 +99,7 @@ export default async function PipelinePage({
         }
         actions={
           <div className="flex items-center gap-2">
+            {viewToggle}
             <a
               href={`/pipeline/forecast?pipelineId=${active.id}`}
               className="rounded-full border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
@@ -83,7 +111,11 @@ export default async function PipelinePage({
         }
       />
 
-      <PipelineBoard pipeline={active} deals={deals} />
+      {view === "table" ? (
+        <TableView pipeline={active} deals={deals} />
+      ) : (
+        <PipelineBoard pipeline={active} deals={deals} />
+      )}
     </div>
   );
 }

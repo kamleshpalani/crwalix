@@ -1,5 +1,6 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { prisma } from "@crawlix/db";
 
 export interface AuthContext {
@@ -177,4 +178,73 @@ export async function requireSuperAdmin(): Promise<
     return { code: "USER_SUSPENDED" } satisfies AuthError;
   }
   return { userId: user.id };
+}
+
+/**
+ * Phase 5.8 — API key authentication.
+ *
+ * Accepts either a Clerk session (browser) or a `Authorization: Bearer ck_...`
+ * header (programmatic access via API key).  Returns the same AuthContext
+ * shape so route handlers work identically regardless of auth method.
+ *
+ * API key format: `ck_live_<random>` — the full key is hashed with SHA-256
+ * and stored in ApiKey.keyHash.  The prefix (first 8 chars of the random
+ * portion) is stored in ApiKey.keyPrefix for display in the UI.
+ */
+export async function requireOrgOrApiKey(
+  req: Request | { headers: Headers },
+): Promise<AuthContext | NextResponse | AuthError> {
+  const authorization =
+    (req as Request).headers?.get?.("authorization") ?? null;
+  const raw = authorization?.replace(/^Bearer\s+/i, "") ?? "";
+
+  if (raw.startsWith("ck_")) {
+    // API key path.
+    const hash = createHash("sha256").update(raw).digest("hex");
+
+    const apiKey = await prisma.apiKey.findUnique({
+      where: { keyHash: hash },
+      include: { organization: true },
+    });
+
+    if (!apiKey || apiKey.revokedAt !== null) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Invalid or revoked API key",
+          },
+        },
+        { status: 401 },
+      );
+    }
+
+    if (apiKey.organization.status !== "ACTIVE") {
+      return { code: "ORG_SUSPENDED" } satisfies AuthError;
+    }
+
+    // Best-effort lastUsedAt stamp (fire-and-forget).
+    prisma.apiKey
+      .update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } })
+      .catch(() => {});
+
+    // We don't have a per-user context for machine keys, so we use the key
+    // creator as the userId for audit purposes.
+    const creator = await prisma.user.findUnique({
+      where: { id: apiKey.createdById },
+      select: { id: true, isSuperAdmin: true },
+    });
+
+    return {
+      userId: apiKey.createdById,
+      clerkUserId: creator?.id ?? apiKey.createdById,
+      clerkOrgId: apiKey.organization.clerkOrgId,
+      orgId: apiKey.organizationId,
+      role: "api_key",
+      isSuperAdmin: creator?.isSuperAdmin ?? false,
+    };
+  }
+
+  // Fall through to Clerk session.
+  return requireOrg();
 }

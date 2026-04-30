@@ -21,6 +21,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import type Stripe from "stripe";
 import { prisma, withOrg } from "@crawlix/db";
 import { constructWebhookEvent } from "@crawlix/billing";
+import { emitNotification } from "@/server/lib/notify";
+import { NotificationKind } from "@/server/services/notification-kinds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,9 +90,9 @@ function determinePlan(
   if (!item) return "FREE";
   const priceId = typeof item.price === "string" ? item.price : item.price.id;
 
-  if (priceId === process.env.STRIPE_PRICE_STARTER) return "STARTER";
-  if (priceId === process.env.STRIPE_PRICE_GROWTH) return "GROWTH";
-  if (priceId === process.env.STRIPE_PRICE_SCALE) return "SCALE";
+  if (priceId === process.env.STRIPE_PRICE_ID_STARTER) return "STARTER";
+  if (priceId === process.env.STRIPE_PRICE_ID_GROWTH) return "GROWTH";
+  if (priceId === process.env.STRIPE_PRICE_ID_SCALE) return "SCALE";
   return "FREE";
 }
 
@@ -222,21 +224,35 @@ async function syncPayment(
 }
 
 /**
- * Extract the organizationId from the Stripe customer metadata.
- * We set this when creating the customer via createCustomer({ metadata: { organizationId } }).
+ * Extract the organizationId from the Stripe customer. If the customer is
+ * only a string ID (not expanded), look up the org via our local DB.
  */
-function extractOrgId(
+async function extractOrgId(
   customer:
     | string
     | Stripe.Customer
     | Stripe.DeletedCustomer
     | null
     | undefined,
-): string | null {
+): Promise<string | null> {
   if (!customer) return null;
-  if (typeof customer === "string") return null;
+  if (typeof customer === "string") {
+    const org = await prisma.organization.findFirst({
+      where: { stripeCustomerId: customer },
+      select: { id: true },
+    });
+    return org?.id ?? null;
+  }
   if ("deleted" in customer && customer.deleted) return null;
-  return (customer.metadata?.organizationId as string | undefined) ?? null;
+  // For expanded customers, check metadata first, then look up by Stripe ID.
+  const metaOrg =
+    (customer.metadata?.organizationId as string | undefined) ?? null;
+  if (metaOrg) return metaOrg;
+  const org = await prisma.organization.findFirst({
+    where: { stripeCustomerId: customer.id },
+    select: { id: true },
+  });
+  return org?.id ?? null;
 }
 
 async function handleEvent(event: Stripe.Event): Promise<void> {
@@ -249,7 +265,7 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     type === "customer.subscription.deleted"
   ) {
     const sub = event.data.object as Stripe.Subscription;
-    const orgId = extractOrgId(sub.customer);
+    const orgId = await extractOrgId(sub.customer);
     if (!orgId) {
       console.warn(
         `[webhook] subscription ${sub.id} has no orgId in customer metadata`,
@@ -257,6 +273,32 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
       return;
     }
     await syncSubscription(orgId, sub);
+    if (type === "customer.subscription.deleted" || sub.cancel_at) {
+      void emitNotification({
+        organizationId: orgId,
+        kind: NotificationKind.SUBSCRIPTION_CANCELED,
+        title: "Subscription canceled",
+        body: sub.cancel_at
+          ? `Will end on ${new Date(sub.cancel_at * 1000).toLocaleDateString()}.`
+          : "Subscription has ended.",
+        href: "/settings/billing",
+        data: { stripeSubscriptionId: sub.id, status: sub.status },
+      });
+    } else if (
+      type === "customer.subscription.updated" &&
+      sub.status === "active"
+    ) {
+      void emitNotification({
+        organizationId: orgId,
+        kind: NotificationKind.SUBSCRIPTION_RENEWED,
+        title: "Subscription renewed",
+        body: sub.current_period_end
+          ? `Active until ${new Date(sub.current_period_end * 1000).toLocaleDateString()}.`
+          : "Subscription is active.",
+        href: "/settings/billing",
+        data: { stripeSubscriptionId: sub.id },
+      });
+    }
     return;
   }
 
@@ -269,7 +311,7 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     type === "invoice.voided"
   ) {
     const inv = event.data.object as Stripe.Invoice;
-    const orgId = extractOrgId(inv.customer);
+    const orgId = await extractOrgId(inv.customer);
     if (!orgId) {
       console.warn(
         `[webhook] invoice ${inv.id} has no orgId in customer metadata`,
@@ -277,6 +319,25 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
       return;
     }
     await syncInvoice(orgId, inv);
+    if (type === "invoice.paid") {
+      void emitNotification({
+        organizationId: orgId,
+        kind: NotificationKind.PAYMENT_RECEIVED,
+        title: `Payment received — ${inv.number ?? "invoice"}`,
+        body: `${((inv.amount_paid ?? inv.total ?? 0) / 100).toFixed(2)} ${(inv.currency ?? "USD").toUpperCase()} via Stripe.`,
+        href: "/invoices",
+        data: { stripeInvoiceId: inv.id, number: inv.number ?? null },
+      });
+    } else if (type === "invoice.payment_failed") {
+      void emitNotification({
+        organizationId: orgId,
+        kind: NotificationKind.PAYMENT_FAILED,
+        title: `Payment failed — ${inv.number ?? "invoice"}`,
+        body: `Stripe could not collect ${((inv.amount_due ?? 0) / 100).toFixed(2)} ${(inv.currency ?? "USD").toUpperCase()}.`,
+        href: "/invoices",
+        data: { stripeInvoiceId: inv.id, number: inv.number ?? null },
+      });
+    }
     return;
   }
 
@@ -287,7 +348,7 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     type === "payment_intent.canceled"
   ) {
     const pi = event.data.object as Stripe.PaymentIntent;
-    const orgId = extractOrgId(pi.customer as Stripe.Customer | null);
+    const orgId = await extractOrgId(pi.customer as Stripe.Customer | null);
     if (!orgId) {
       console.warn(
         `[webhook] payment_intent ${pi.id} has no orgId in customer metadata`,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { supportService } from "@/server/services/support.service";
+import { rateLimitOrg } from "@/lib/rate-limit";
 
 const Body = z.object({
   question: z.string().min(1).max(4000),
@@ -14,6 +15,9 @@ export async function POST(req: Request) {
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+
+  const limited = await rateLimitOrg(ctx.orgId, "ai");
+  if (limited) return limited;
 
   let body: unknown;
   try {

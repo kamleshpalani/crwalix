@@ -26,20 +26,43 @@ export interface DraftProposalArgs {
   lead: ProposalLeadInput;
   /** Override target service/offering, e.g. "Website redesign". */
   offering?: string;
+  /** Voice / register the AI should adopt. Defaults to "professional". */
+  tone?: "professional" | "friendly" | "concise" | "persuasive" | "executive";
+  /** Optional pricing band the AI must use verbatim, e.g. "$3,000–$4,500". */
+  priceBand?: string;
 }
 
-const SYSTEM = `You are an expert B2B sales engineer writing concise, personalized proposals.
-Output a clean self-contained HTML document (no markdown, no <html>/<head> wrapper — just a <section>) with these blocks in order:
-1. <h1> headline naming the prospect's business
-2. <p> opener that proves you researched them (reference 1–2 specific findings)
-3. <h2>Why now</h2> + <ul> with 3–5 issues you observed
-4. <h2>What we propose</h2> + <ul> with 3 deliverables
-5. <h2>Investment</h2> + a single <p> with a price band (placeholder e.g. "$X–Y")
-6. <h2>Next step</h2> + a 1-sentence call to action
-Keep total length under 350 words. Never invent specific data not present in the input.`;
+const TONE_GUIDANCE: Record<NonNullable<DraftProposalArgs["tone"]>, string> = {
+  professional:
+    "Voice: confident, polished, business-appropriate. Avoid slang.",
+  friendly:
+    "Voice: warm, conversational, first-name energy without being casual.",
+  concise:
+    "Voice: terse and dense. Prefer short sentences and bullets. Cut filler.",
+  persuasive:
+    "Voice: outcome-driven, benefit-led. Emphasise ROI and risk of inaction.",
+  executive:
+    "Voice: C-suite ready. Lead with strategic outcomes, downplay tactics.",
+};
+
+const SYSTEM_TEMPLATE = (tone: string, priceBand?: string) =>
+  `You are an expert B2B sales engineer writing concise, personalized proposals.
+${tone}
+Output a clean self-contained HTML document (no markdown, no <html>/<head> wrapper — just a <section>) using these labelled blocks IN THIS EXACT ORDER. Each block must be wrapped in <section data-block="<id>"> so downstream renderers can re-style them:
+  cover       — <h1> with the prospect's business name + a one-line subtitle
+  summary     — <p> 2–3 sentences proving you researched them; reference 1–2 specific findings
+  problems    — <h2>Problems we observed</h2> + <ul> with 3–5 issues (each <li> tagged with <strong> impact label)
+  solution    — <h2>Our approach</h2> + <p> describing the recommended path
+  scope       — <h2>Scope</h2> + <ul> of in-scope items
+  deliverables— <h2>Deliverables</h2> + <ul> with 3–5 concrete artifacts
+  timeline    — <h2>Timeline</h2> + <ol> with 3–4 phases (week ranges)
+  pricing     — <h2>Investment</h2> + <p> with the price${priceBand ? ` (use exactly: ${priceBand})` : ' band (placeholder e.g. "$X–Y")'}
+  terms       — <h2>Terms</h2> + <ul> with 3–4 short bullets (validity, deposit, deliverable acceptance)
+  cta         — <h2>Next step</h2> + 1-sentence call to action
+Keep total length under 500 words. Never invent specific numbers or facts not present in the input. Do NOT include any text outside the outer <section>.`;
 
 function userPrompt(args: DraftProposalArgs): string {
-  const { org, lead, offering } = args;
+  const { org, lead, offering, priceBand } = args;
   const findings = [
     lead.website ? `website: ${lead.website}` : "no website on record",
     lead.websiteHealth ? `health: ${lead.websiteHealth}` : null,
@@ -54,17 +77,28 @@ function userPrompt(args: DraftProposalArgs): string {
     .filter(Boolean)
     .join("\n  - ");
 
+  const senderLine = org.pitch
+    ? `Sender: ${org.name} — ${org.pitch}`
+    : `Sender: ${org.name}`;
+  const locationBits = [lead.city, lead.country].filter(Boolean).join(", ");
+  const prospectLine =
+    `Prospect: ${lead.name}` +
+    (lead.category ? ` (${lead.category})` : "") +
+    (locationBits ? ` — ${locationBits}` : "");
+
   return [
-    `Sender: ${org.name}${org.pitch ? " — " + org.pitch : ""}`,
-    `Prospect: ${lead.name}${lead.category ? " (" + lead.category + ")" : ""}` +
-      (lead.city || lead.country
-        ? ` — ${[lead.city, lead.country].filter(Boolean).join(", ")}`
-        : ""),
+    senderLine,
+    prospectLine,
     `Findings:\n  - ${findings || "(none)"}`,
     offering
       ? `Offering: ${offering}`
       : "Offering: pick the best fit from the recommended pitches.",
-  ].join("\n\n");
+    priceBand
+      ? `Price band (use verbatim in pricing block): ${priceBand}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export interface DraftProposalResult {
@@ -77,13 +111,15 @@ export interface DraftProposalResult {
 export async function draftProposal(
   args: DraftProposalArgs,
 ): Promise<DraftProposalResult> {
+  const tone = args.tone ?? "professional";
+  const system = SYSTEM_TEMPLATE(TONE_GUIDANCE[tone], args.priceBand);
   const result = await aiComplete({
     taskKind: "proposal.draft",
     organizationId: args.organizationId,
     temperature: 0.4,
-    maxTokens: 1200,
+    maxTokens: 1600,
     messages: [
-      { role: "system", content: SYSTEM },
+      { role: "system", content: system },
       { role: "user", content: userPrompt(args) },
     ],
   });
