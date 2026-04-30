@@ -238,7 +238,7 @@ export async function requireOrgOrApiKey(
     return {
       userId: apiKey.createdById,
       clerkUserId: creator?.id ?? apiKey.createdById,
-      clerkOrgId: apiKey.organization.clerkOrgId,
+      clerkOrgId: apiKey.organization.clerkOrgId ?? apiKey.organizationId,
       orgId: apiKey.organizationId,
       role: "api_key",
       isSuperAdmin: creator?.isSuperAdmin ?? false,
