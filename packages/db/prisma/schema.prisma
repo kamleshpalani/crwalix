@@ -102,6 +102,8 @@ enum EnrichmentKind {
   BUSINESS_DESCRIPTION
   /// §8.1 — AI-generated review summary from rating + review count.
   REVIEW_SUMMARY
+  /// §9.3 — AI-powered full website audit report.
+  WEBSITE_REPORT
 }
 
 enum EnrichmentStatus {
