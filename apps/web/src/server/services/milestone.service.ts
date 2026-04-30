@@ -11,6 +11,8 @@
  */
 
 import { prisma, withOrg } from "@crawlix/db";
+import { emitNotification } from "@/server/lib/notify";
+import { NotificationKind } from "./notification-kinds";
 import {
   createInvoice,
   addInvoiceLineItem,
@@ -141,6 +143,23 @@ export const milestoneService = {
           );
         },
       );
+    }
+
+    if (milestone.justCompleting) {
+      void emitNotification({
+        organizationId: orgId,
+        kind: NotificationKind.MILESTONE_COMPLETED,
+        title: `Milestone completed: ${milestone.milestone.title}`,
+        body:
+          milestone.milestone.amountCents > 0
+            ? `Billable checkpoint — ${(milestone.milestone.amountCents / 100).toFixed(2)} ${milestone.milestone.currency}.`
+            : `Project checkpoint reached.`,
+        href: `/projects/${milestone.milestone.projectId}`,
+        data: {
+          milestoneId: milestone.milestone.id,
+          projectId: milestone.milestone.projectId,
+        },
+      });
     }
 
     return milestone.milestone;

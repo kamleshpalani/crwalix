@@ -24,6 +24,7 @@ export const JobName = {
   OUTREACH_SEND: "outreach.send",
   OUTREACH_SEQUENCE_TICK: "outreach.sequenceTick",
   OUTREACH_CLASSIFY_REPLY: "outreach.classifyReply",
+  DSAR_PROCESS: "system.dsarProcess",
 } as const;
 export type JobName = (typeof JobName)[keyof typeof JobName];
 
@@ -138,11 +139,22 @@ export type AnyJob =
   | ({ name: typeof JobName.EXPORT_BUILD } & ExportBuildJob)
   | ({ name: typeof JobName.INTEL_BUILD } & IntelBuildJob);
 
+export type ProposalTone =
+  | "professional"
+  | "friendly"
+  | "concise"
+  | "persuasive"
+  | "executive";
+
 export interface GenerateProposalJob {
   organizationId: string;
   dealId: string;
   /** Optional override for the offering pitched in the proposal. */
   offering?: string;
+  /** Voice / register the AI should adopt. Defaults to "professional". */
+  tone?: ProposalTone;
+  /** Optional pricing band shown verbatim, e.g. "$3,000–$4,500". */
+  priceBand?: string;
   /** Userid that triggered the generation; recorded on the Proposal row. */
   triggeredByUserId?: string;
 }
@@ -192,4 +204,16 @@ export interface OutreachSequenceTickJob {
 export interface OutreachClassifyReplyJob {
   organizationId: string;
   inboundMessageId: string;
+}
+
+/**
+ * Process a DSAR (Data Subject Access Request) — either export or erase.
+ * The worker picks up the DsarRequest row, runs the appropriate operation,
+ * and stamps the result back onto the row.
+ */
+export interface DsarProcessJob {
+  dsarRequestId: string;
+  orgId: string;
+  userId: string;
+  type: "EXPORT" | "ERASE";
 }

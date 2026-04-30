@@ -246,6 +246,10 @@ export const leadsService = {
             orderBy: { createdAt: "desc" },
             include: { searchRun: { include: { search: true } } },
           },
+          mergeHistoryAsCanonical: {
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          },
         },
       }),
     );
@@ -382,9 +386,14 @@ export const leadsService = {
 
   /**
    * Manually create a lead. Performs dedup against existing leads. Behavior:
-   *   - If a duplicate is found and `mode='merge'` (default), the existing
-   *     lead's missing fields are filled in and a LeadMergeHistory row is
+   *   - If a high-confidence duplicate is found (≥0.85 OR exact/place_id) and
+   *     `mode='merge'` (default), the existing lead's missing fields are
+   *     filled in and a LeadMergeHistory row (status='auto_merged') is
    *     written. The duplicate is NOT counted against the org's quota.
+   *   - If a low-confidence fuzzy duplicate is found (name_address / name_geo /
+   *     name_city below 0.85), a NEW lead is created and a LeadMergeHistory
+   *     row (status='pending_review') is written linking the two so a human
+   *     can approve or reject the merge.
    *   - If `mode='create_anyway'`, a new row is created regardless.
    */
   async create(
@@ -392,7 +401,16 @@ export const leadsService = {
     input: CreateLeadInput,
     opts: { mode?: "merge" | "create_anyway"; createdByUserId?: string } = {},
   ): Promise<
-    | { ok: true; leadId: string; created: true }
+    | {
+        ok: true;
+        leadId: string;
+        created: true;
+        pendingReview?: {
+          canonicalLeadId: string;
+          reason: string;
+          confidence: number;
+        };
+      }
     | { ok: true; leadId: string; created: false; mergedReason: string }
   > {
     const { findDupOnEntry } = await import("./lead-dedup");
@@ -419,8 +437,56 @@ export const leadsService = {
           provider,
           externalPlaceId,
           city: input.city,
+          address: input.address,
+          lat: input.lat,
+          lng: input.lng,
         });
         if (dup) {
+          const isFuzzy =
+            dup.reason === "name_address" ||
+            dup.reason === "name_geo" ||
+            dup.reason === "name_city";
+          const lowConfidence = isFuzzy && dup.confidence < 0.85;
+          if (lowConfidence) {
+            // Defer to human review: create the new lead AND write a
+            // pending_review row so the user can approve/reject.
+            const created = await tx.lead.create({
+              data: buildCreateData({
+                orgId,
+                provider,
+                externalPlaceId,
+                input,
+                phoneNorm,
+                emailNorm,
+                nameNorm,
+                addrNorm,
+              }),
+              select: { id: true },
+            });
+            await tx.leadMergeHistory.create({
+              data: {
+                organizationId: orgId,
+                canonicalLeadId: dup.leadId,
+                pendingLeadId: created.id,
+                reason: dup.reason,
+                confidence: dup.confidence,
+                fromProvider: provider,
+                fromExternalId: externalPlaceId,
+                payload: input as unknown as object,
+                status: "pending_review",
+              },
+            });
+            return {
+              ok: true,
+              leadId: created.id,
+              created: true,
+              pendingReview: {
+                canonicalLeadId: dup.leadId,
+                reason: dup.reason,
+                confidence: dup.confidence,
+              },
+            };
+          }
           // Fill missing fields without overwriting existing data.
           const existing = await tx.lead.findFirst({
             where: { id: dup.leadId },
@@ -497,6 +563,7 @@ export const leadsService = {
               fromProvider: provider,
               fromExternalId: externalPlaceId,
               payload: input as unknown as object,
+              status: "auto_merged",
             },
           });
           return {
@@ -509,43 +576,16 @@ export const leadsService = {
       }
 
       const created = await tx.lead.create({
-        data: {
-          organizationId: orgId,
+        data: buildCreateData({
+          orgId,
           provider,
           externalPlaceId,
-          name: input.name,
-          nameNormalized: nameNorm,
-          categoryPrimary: input.categoryPrimary ?? null,
-          categories: input.categories ?? [],
-          industry: input.industry ?? null,
-          phone: input.phone ?? null,
-          phoneNormalized: phoneNorm,
-          email: input.email ?? null,
-          emailNormalized: emailNorm,
-          ownerName: input.ownerName ?? null,
-          website: input.website ?? null,
-          facebookUrl: input.facebookUrl ?? null,
-          instagramUrl: input.instagramUrl ?? null,
-          googleProfileUrl: input.googleProfileUrl ?? null,
-          sourceUrl: input.sourceUrl ?? null,
-          address: input.address ?? null,
-          addressNormalized: addrNorm,
-          city: input.city ?? null,
-          state: input.state ?? null,
-          country: input.country ?? null,
-          postalCode: input.postalCode ?? null,
-          lat: input.lat ?? null,
-          lng: input.lng ?? null,
-          rating: input.rating ?? null,
-          reviewCount: input.reviewCount ?? null,
-          openingHours: (input.openingHours ?? undefined) as object | undefined,
-          notes: input.notes ?? null,
-          tags: input.tags ?? [],
-          assignedUserId: input.assignedUserId ?? null,
-          crmStage: input.crmStage ?? null,
-          rawPayload: { source: "web_create", input } as unknown as object,
-          normalizedPayload: { source: "web_create" } as unknown as object,
-        },
+          input,
+          phoneNorm,
+          emailNorm,
+          nameNorm,
+          addrNorm,
+        }),
         select: { id: true },
       });
       return { ok: true, leadId: created.id, created: true };
@@ -682,7 +722,247 @@ export const leadsService = {
     }
     return { ok: true, created, merged, failed, errors };
   },
+
+  /**
+   * Bulk import a parsed array of rows. Used by XLSX upload — the route
+   * parses the workbook into [header, ...rows] and calls this. Internally
+   * just stringifies to CSV and reuses `importCsv` so the dedup path is
+   * exactly the same (Section 7.2: identical merge semantics across
+   * formats).
+   */
+  async importRows(
+    orgId: string,
+    rows: string[][],
+    opts: { provider?: string } = {},
+  ) {
+    const csv = rows
+      .map((r) => r.map((c) => csvEscape(c)).join(","))
+      .join("\n");
+    return this.importCsv(orgId, csv, opts);
+  },
+
+  /** List low-confidence dedupe hits awaiting human review (Section 7.4). */
+  async listPendingMerges(orgId: string, take = 50) {
+    return withOrg(orgId, (tx) =>
+      tx.leadMergeHistory.findMany({
+        where: { organizationId: orgId, status: "pending_review" },
+        orderBy: { createdAt: "desc" },
+        take,
+        include: {
+          canonical: {
+            select: {
+              id: true,
+              name: true,
+              city: true,
+              phone: true,
+              website: true,
+            },
+          },
+          pending: {
+            select: {
+              id: true,
+              name: true,
+              city: true,
+              phone: true,
+              website: true,
+            },
+          },
+        },
+      }),
+    );
+  },
+
+  /**
+   * Approve a pending merge: fold the pending lead into the canonical lead
+   * (filling missing fields, transferring sources/enrichments) and delete
+   * the pending lead. Marks the history row 'confirmed'.
+   */
+  async approveMerge(orgId: string, mergeId: string, reviewerId: string) {
+    return withOrg(orgId, async (tx) => {
+      const row = await tx.leadMergeHistory.findFirst({
+        where: { id: mergeId, organizationId: orgId, status: "pending_review" },
+      });
+      if (!row || !row.pendingLeadId) {
+        return { ok: false as const, error: "NOT_FOUND" as const };
+      }
+      const pending = await tx.lead.findFirst({
+        where: { id: row.pendingLeadId, organizationId: orgId },
+      });
+      const canonical = await tx.lead.findFirst({
+        where: { id: row.canonicalLeadId, organizationId: orgId },
+        select: {
+          phone: true,
+          email: true,
+          website: true,
+          ownerName: true,
+          address: true,
+          city: true,
+          state: true,
+          country: true,
+          postalCode: true,
+          lat: true,
+          lng: true,
+          rating: true,
+          reviewCount: true,
+          industry: true,
+          categoryPrimary: true,
+          categories: true,
+          facebookUrl: true,
+          instagramUrl: true,
+          googleProfileUrl: true,
+        },
+      });
+      if (!pending || !canonical) {
+        return { ok: false as const, error: "NOT_FOUND" as const };
+      }
+      const update: Record<string, unknown> = { lastSeenAt: new Date() };
+      const fill = <K extends keyof typeof canonical>(k: K, v: unknown) => {
+        if (v === undefined || v === null || v === "") return;
+        const cur = canonical[k];
+        if (cur === null || cur === undefined || cur === "") {
+          update[k as string] = v;
+        }
+      };
+      fill("phone", pending.phone);
+      fill("email", pending.email);
+      fill("website", pending.website);
+      fill("ownerName", pending.ownerName);
+      fill("address", pending.address);
+      fill("city", pending.city);
+      fill("state", pending.state);
+      fill("country", pending.country);
+      fill("postalCode", pending.postalCode);
+      fill("lat", pending.lat);
+      fill("lng", pending.lng);
+      fill("rating", pending.rating);
+      fill("reviewCount", pending.reviewCount);
+      fill("industry", pending.industry);
+      fill("categoryPrimary", pending.categoryPrimary);
+      fill("facebookUrl", pending.facebookUrl);
+      fill("instagramUrl", pending.instagramUrl);
+      fill("googleProfileUrl", pending.googleProfileUrl);
+      if (pending.categories?.length) {
+        update.categories = {
+          set: Array.from(
+            new Set([...(canonical.categories ?? []), ...pending.categories]),
+          ),
+        };
+      }
+      await tx.lead.update({
+        where: { id: row.canonicalLeadId },
+        data: update,
+      });
+
+      // Re-parent dependent rows to the canonical lead.
+      await tx.leadSource.updateMany({
+        where: { leadId: row.pendingLeadId },
+        data: { leadId: row.canonicalLeadId },
+      });
+      await tx.enrichment.updateMany({
+        where: { leadId: row.pendingLeadId },
+        data: { leadId: row.canonicalLeadId },
+      });
+
+      await tx.lead.delete({ where: { id: row.pendingLeadId } });
+
+      await tx.leadMergeHistory.update({
+        where: { id: row.id },
+        data: {
+          status: "confirmed",
+          pendingLeadId: null,
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+        },
+      });
+      return { ok: true as const, canonicalLeadId: row.canonicalLeadId };
+    });
+  },
+
+  /** Reject a pending merge: keep both leads as separate records. */
+  async rejectMerge(orgId: string, mergeId: string, reviewerId: string) {
+    return withOrg(orgId, async (tx) => {
+      const row = await tx.leadMergeHistory.findFirst({
+        where: { id: mergeId, organizationId: orgId, status: "pending_review" },
+      });
+      if (!row) return { ok: false as const, error: "NOT_FOUND" as const };
+      await tx.leadMergeHistory.update({
+        where: { id: row.id },
+        data: {
+          status: "rejected",
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+        },
+      });
+      return { ok: true as const };
+    });
+  },
 };
+
+/** Build the Prisma create payload for a new Lead from a CreateLeadInput. */
+function buildCreateData(args: {
+  orgId: string;
+  provider: string;
+  externalPlaceId: string;
+  input: CreateLeadInput;
+  phoneNorm: string | null;
+  emailNorm: string | null;
+  nameNorm: string;
+  addrNorm: string | null;
+}) {
+  const {
+    orgId,
+    provider,
+    externalPlaceId,
+    input,
+    phoneNorm,
+    emailNorm,
+    nameNorm,
+    addrNorm,
+  } = args;
+  return {
+    organizationId: orgId,
+    provider,
+    externalPlaceId,
+    name: input.name,
+    nameNormalized: nameNorm,
+    categoryPrimary: input.categoryPrimary ?? null,
+    categories: input.categories ?? [],
+    industry: input.industry ?? null,
+    phone: input.phone ?? null,
+    phoneNormalized: phoneNorm,
+    email: input.email ?? null,
+    emailNormalized: emailNorm,
+    ownerName: input.ownerName ?? null,
+    website: input.website ?? null,
+    facebookUrl: input.facebookUrl ?? null,
+    instagramUrl: input.instagramUrl ?? null,
+    googleProfileUrl: input.googleProfileUrl ?? null,
+    sourceUrl: input.sourceUrl ?? null,
+    address: input.address ?? null,
+    addressNormalized: addrNorm,
+    city: input.city ?? null,
+    state: input.state ?? null,
+    country: input.country ?? null,
+    postalCode: input.postalCode ?? null,
+    lat: input.lat ?? null,
+    lng: input.lng ?? null,
+    rating: input.rating ?? null,
+    reviewCount: input.reviewCount ?? null,
+    openingHours: (input.openingHours ?? undefined) as object | undefined,
+    notes: input.notes ?? null,
+    tags: input.tags ?? [],
+    assignedUserId: input.assignedUserId ?? null,
+    crmStage: input.crmStage ?? null,
+    rawPayload: { source: "web_create", input } as unknown as object,
+    normalizedPayload: { source: "web_create" } as unknown as object,
+  };
+}
+
+function csvEscape(value: string): string {
+  const v = value ?? "";
+  if (/[",\r\n]/.test(v)) return `"${v.replaceAll('"', '""')}"`;
+  return v;
+}
 
 /**
  * Minimal CSV parser supporting quoted fields, embedded newlines, and

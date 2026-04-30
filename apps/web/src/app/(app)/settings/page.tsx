@@ -96,6 +96,18 @@ export default async function SettingsPage() {
         >
           Billing
         </Link>
+        <Link
+          href="/settings/privacy"
+          className="rounded-full border border-white/60 bg-white/70 px-3 py-1.5 text-xs font-medium text-ink-700 shadow-glass backdrop-blur hover:bg-white"
+        >
+          Privacy & data
+        </Link>
+        <Link
+          href="/settings/developer"
+          className="rounded-full border border-white/60 bg-white/70 px-3 py-1.5 text-xs font-medium text-ink-700 shadow-glass backdrop-blur hover:bg-white"
+        >
+          Developer
+        </Link>
       </nav>
 
       <section className="space-y-3">

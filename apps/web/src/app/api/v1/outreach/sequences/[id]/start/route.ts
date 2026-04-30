@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { StartSequenceRunInput } from "@crawlix/shared";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { sequenceService } from "@/server/services/sequence.service";
+import { rateLimitOrg } from "@/lib/rate-limit";
 
 export async function POST(
   req: Request,
@@ -11,6 +12,9 @@ export async function POST(
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+
+  const limited = await rateLimitOrg(ctx.orgId, "outreach");
+  if (limited) return limited;
 
   const body = await req.json().catch(() => ({}));
   const parsed = StartSequenceRunInput.safeParse({

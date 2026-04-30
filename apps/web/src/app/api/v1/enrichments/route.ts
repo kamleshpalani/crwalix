@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { enrichmentService } from "@/server/services/enrichment.service";
 import { auditService } from "@/server/services/audit.service";
+import { rateLimitOrg } from "@/lib/rate-limit";
 
 const Kind = z.enum([
   "WEBSITE_VALIDATION",
@@ -52,6 +53,9 @@ export async function POST(req: Request) {
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+
+  const limited = await rateLimitOrg(ctx.orgId, "ai");
+  if (limited) return limited;
 
   let body: unknown;
   try {

@@ -9,15 +9,26 @@
  */
 import { prisma } from "@crawlix/db";
 import { sendEmail } from "@crawlix/email";
+import type { NotificationKindValue } from "@/server/services/notification-kinds";
 
+/**
+ * Notification kind. Accepts the canonical values from
+ * `notification-kinds.ts` plus any free-form string for forward-compat
+ * (the DB column is `String`, not an enum).
+ *
+ * Legacy aliases used by older code paths are kept so existing call
+ * sites (e.g. `"PROPOSAL_SENT"`) compile without a refactor.
+ */
 export type CrmNotificationKind =
+  | NotificationKindValue
   | "DEAL_WON"
   | "PROPOSAL_SENT"
   | "PROPOSAL_VIEWED"
   | "PROPOSAL_ACCEPTED"
   | "PROPOSAL_DECLINED"
   | "PROJECT_CREATED"
-  | "LEAD_REPLIED";
+  | "LEAD_REPLIED"
+  | (string & {});
 
 export interface NotifyInput {
   organizationId: string;

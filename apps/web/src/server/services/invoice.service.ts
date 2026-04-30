@@ -11,6 +11,9 @@
 
 import { withOrg } from "@crawlix/db";
 import { randomBytes } from "node:crypto";
+import { emitNotification } from "@/server/lib/notify";
+import { auditService } from "./audit.service";
+import { NotificationKind } from "./notification-kinds";
 
 export type InvoiceStatus =
   | "DRAFT"
@@ -254,7 +257,7 @@ async function get(orgId: string, id: string): Promise<InvoiceDto | null> {
 }
 
 async function send(orgId: string, id: string): Promise<InvoiceDto> {
-  return withOrg(orgId, async (tx) => {
+  const dto = await withOrg(orgId, async (tx) => {
     const existing = await tx.invoice.findFirst({
       where: { id, organizationId: orgId },
       select: { status: true, shareToken: true, stripeInvoiceId: true },
@@ -269,6 +272,21 @@ async function send(orgId: string, id: string): Promise<InvoiceDto> {
     });
     return toDto(updated);
   });
+  void emitNotification({
+    organizationId: orgId,
+    kind: NotificationKind.INVOICE_SENT,
+    title: `Invoice ${dto.number ?? ""} sent`.trim(),
+    body: `${dto.customerName ?? "Customer"} — ${(dto.totalCents / 100).toFixed(2)} ${dto.currency}`,
+    href: `/invoices/${dto.id}`,
+    data: { invoiceId: dto.id, number: dto.number },
+  });
+  void auditService.record({
+    orgId,
+    action: "invoice.send",
+    target: dto.id,
+    metadata: { number: dto.number },
+  });
+  return dto;
 }
 
 async function markPaid(
@@ -276,7 +294,7 @@ async function markPaid(
   id: string,
   args: { method?: string; reference?: string },
 ): Promise<InvoiceDto> {
-  return withOrg(orgId, async (tx) => {
+  const dto = await withOrg(orgId, async (tx) => {
     const existing = await tx.invoice.findFirst({
       where: { id, organizationId: orgId },
       select: {
@@ -318,6 +336,16 @@ async function markPaid(
     });
     return toDto(updated);
   });
+  const methodSuffix = args.method ? ` via ${args.method}` : "";
+  void emitNotification({
+    organizationId: orgId,
+    kind: NotificationKind.PAYMENT_RECEIVED,
+    title: `Payment received — ${dto.number ?? "invoice"}`,
+    body: `${(dto.totalCents / 100).toFixed(2)} ${dto.currency} marked paid${methodSuffix}.`,
+    href: `/invoices/${dto.id}`,
+    data: { invoiceId: dto.id, method: args.method ?? null },
+  });
+  return dto;
 }
 
 async function voidInvoice(orgId: string, id: string): Promise<InvoiceDto> {

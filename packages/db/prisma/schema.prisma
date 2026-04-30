@@ -145,6 +145,7 @@ model User {
   updatedAt   DateTime @updatedAt
   memberships OrganizationMember[]
   auditLogs   AuditLog[]
+  dsarRequests DsarRequest[]
 }
 
 model Organization {
@@ -181,6 +182,7 @@ model Organization {
   subscription     Subscription?
   usageLogs        UsageLog[]
   apiKeys          ApiKey[]
+  dsarRequests     DsarRequest[]
   providerConfigs  ProviderConfig[]
   outreachSettings OutreachSettings?
   outreachSuppressions OutreachSuppression[]
@@ -503,6 +505,7 @@ model Lead {
   scores            LeadScore[]
   listMemberships   LeadListItem[]
   mergeHistoryAsCanonical LeadMergeHistory[] @relation("LeadMergeCanonical")
+  mergeHistoryAsPending   LeadMergeHistory[] @relation("LeadMergePending")
 
   @@unique([organizationId, provider, externalPlaceId])
   @@index([organizationId, nameNormalized])
@@ -523,7 +526,7 @@ model LeadMergeHistory {
   id                String   @id @default(uuid())
   organizationId    String
   canonicalLeadId   String
-  /// Reason: 'exact' | 'phone' | 'website' | 'name_address' | 'name_geo' | 'email' | 'place_id' | 'manual'.
+  /// Reason: 'exact' | 'phone' | 'website' | 'name_address' | 'name_geo' | 'email' | 'place_id' | 'manual' | 'name_city'.
   reason            String
   /// 0..1 match confidence at merge time.
   confidence        Float
@@ -533,12 +536,22 @@ model LeadMergeHistory {
   fromExternalId    String?
   /// Snapshot of the incoming normalized lead payload.
   payload           Json?
+  /// 'auto_merged' (default) | 'pending_review' | 'confirmed' | 'rejected'.
+  status            String   @default("auto_merged")
+  /// When status='pending_review', the candidate lead we created instead of
+  /// auto-merging. On approve we fold this lead into canonical and delete it.
+  pendingLeadId     String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
   createdAt         DateTime @default(now())
 
   canonical         Lead     @relation("LeadMergeCanonical", fields: [canonicalLeadId], references: [id], onDelete: Cascade)
+  pending           Lead?    @relation("LeadMergePending",   fields: [pendingLeadId],   references: [id], onDelete: Cascade)
 
   @@index([organizationId, canonicalLeadId])
   @@index([canonicalLeadId, createdAt])
+  @@index([organizationId, status])
+  @@index([pendingLeadId])
 }
 
 model LeadSource {
@@ -824,6 +837,40 @@ model ApiKey {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+}
+
+// =============================================================================
+// GDPR / CCPA — Data Subject Access Requests (Phase 5.2)
+// =============================================================================
+
+enum DsarType {
+  EXPORT  // Right to access / data portability
+  ERASE   // Right to erasure ("right to be forgotten")
+}
+
+enum DsarStatus {
+  PENDING    // Received, not yet processed
+  PROCESSING // Worker picked it up
+  COMPLETED  // Export delivered / erase executed
+  FAILED     // Worker error; see `errorMessage`
+}
+
+model DsarRequest {
+  id             String     @id @default(uuid())
+  organizationId String
+  userId         String     // The user making the request
+  type           DsarType
+  status         DsarStatus @default(PENDING)
+  exportUrl      String?    // Signed download URL once export is ready
+  exportExpiresAt DateTime? // When the download link expires
+  errorMessage   String?
+  processedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, userId])
+  @@index([status, createdAt])
 }
 
 model AuditLog {
@@ -1449,6 +1496,51 @@ model QuoteLineItem {
   quote          Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, quoteId, position])
+}
+
+// =============================================================================
+// Service Packages — Module #10b. Predefined offerings the team can drop
+// into quotes/proposals (Basic Website, E-Commerce, Maintenance, etc).
+// FK + RLS + seed in 0029_service_packages.sql.
+// =============================================================================
+model ServicePackage {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Stable slug e.g. "basic-website" (org-unique).
+  slug           String
+  name           String
+  /// Short marketing summary shown in pickers.
+  summary        String?
+  /// Long description / sales copy (HTML allowed).
+  description    String?
+  category       String?
+  /// Default price in minor units; team can override per-quote.
+  priceCents     Int      @default(0)
+  currency       String   @default("USD")
+  /// Optional billing frequency: ONE_TIME / MONTHLY / YEARLY.
+  billingCycle   String   @default("ONE_TIME")
+  /// JSON array of bullet features e.g. ["5 pages","SEO basics"].
+  features       Json     @default("[]")
+  /// JSON array of default deliverables for proposals.
+  deliverables   Json     @default("[]")
+  /// JSON array of default scope items for quotes.
+  scopeItems     Json     @default("[]")
+  /// Default delivery window in days.
+  deliveryDays   Int?
+  /// Built-in templates seeded by 0029 are marked true so the UI can
+  /// surface "Crawlix presets" vs org-authored entries.
+  isBuiltIn      Boolean  @default(false)
+  /// Soft-disable without deleting (preserves quote line item history).
+  active         Boolean  @default(true)
+  /// Sort weight for pickers; lower shows first.
+  position       Int      @default(0)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, active, position])
+  @@index([organizationId, category])
 }
 
 // =============================================================================

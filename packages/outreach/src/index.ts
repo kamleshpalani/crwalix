@@ -15,6 +15,17 @@
 import { sendEmail, type EmailSendResult } from "@crawlix/email";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
+// Re-export multi-channel adapters so consumers can `import { sendSms }
+// from "@crawlix/outreach"`.
+export {
+  sendSms,
+  sendWhatsApp,
+  twilioCredsFromEnv,
+  type TwilioCredentials,
+  type TwilioSendInput,
+  type TwilioSendResult,
+} from "./channels/twilio";
+
 // ---------- Types ------------------------------------------------------------
 
 export interface OutreachSettingsInput {

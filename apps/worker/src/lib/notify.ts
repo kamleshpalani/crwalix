@@ -21,7 +21,22 @@ const log = logger.child({ component: "notify" });
 
 export interface NotificationInput {
   organizationId: string;
-  kind: "LEADS_DISCOVERED" | "SEARCH_FAILED" | "LEAD_REPLIED";
+  /**
+   * Notification kind — common dot-notation values are mirrored from
+   * `apps/web/src/server/services/notification-kinds.ts`. The DB column is
+   * a free `String`, so any new value is allowed; the union is here only
+   * to prompt autocomplete for the canonical kinds.
+   */
+  kind:
+    | "LEADS_DISCOVERED"
+    | "SEARCH_FAILED"
+    | "LEAD_REPLIED"
+    | "LEAD_HIGH_PRIORITY"
+    | "ENRICHMENT_COMPLETE"
+    | "CAMPAIGN_SENT"
+    | "INVOICE_OVERDUE"
+    | "SUBSCRIPTION_RENEWAL_DUE"
+    | (string & {});
   title: string;
   body: string;
   href?: string;

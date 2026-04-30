@@ -5,6 +5,7 @@ import {
   decodePortalSession,
   PORTAL_COOKIE_NAME,
 } from "@/server/services/portal.service";
+import PortalChat from "./PortalChat";
 
 export const dynamic = "force-dynamic";
 
@@ -166,6 +167,7 @@ export default async function PortalProjectPage({
           </ul>
         )}
       </section>
+      <PortalChat />
     </div>
   );
 }

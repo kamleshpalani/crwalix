@@ -417,6 +417,15 @@ export const crmService = {
     userId: string | null,
     dealId: string,
     offering?: string,
+    options?: {
+      tone?:
+        | "professional"
+        | "friendly"
+        | "concise"
+        | "persuasive"
+        | "executive";
+      priceBand?: string;
+    },
   ) {
     const deal = await withOrg(orgId, (tx) =>
       tx.deal.findFirst({
@@ -433,6 +442,8 @@ export const crmService = {
         organizationId: orgId,
         dealId,
         offering,
+        tone: options?.tone,
+        priceBand: options?.priceBand,
         triggeredByUserId: userId ?? undefined,
       },
       { jobId: `proposal:${dealId}:${Date.now()}` },
@@ -447,7 +458,12 @@ export const crmService = {
           userId,
           kind: ActivityKind.SYSTEM,
           summary: "Proposal generation queued",
-          metadata: { jobId, offering: offering ?? null } as never,
+          metadata: {
+            jobId,
+            offering: offering ?? null,
+            tone: options?.tone ?? null,
+            priceBand: options?.priceBand ?? null,
+          } as never,
         },
       }),
     );
