@@ -30,7 +30,10 @@ export async function emitUsage(input: EmitUsageInput): Promise<void> {
         quantity: input.quantity ?? 1,
         costMicroCents: input.costMicroCents ?? 0,
         refId: input.refId ?? null,
-        meta: input.meta ?? Prisma.DbNull,
+        meta:
+          input.meta === undefined
+            ? Prisma.DbNull
+            : (input.meta as Prisma.InputJsonValue),
       },
     });
   } catch {
