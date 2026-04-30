@@ -32,11 +32,11 @@ export const TASK_DEFAULTS: Record<
   "proposal.draft": { provider: "openai", model: "gpt-4o-mini" },
   "reply.classify": { provider: "openai", model: "gpt-4o-mini" },
   "outreach.email": { provider: "openai", model: "gpt-4o-mini" },
-  "report.weekly": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
-  "support.answer": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+  "report.weekly": { provider: "openai", model: "gpt-4o-mini" },
+  "support.answer": { provider: "openai", model: "gpt-4o-mini" },
   "search.parse": { provider: "openai", model: "gpt-4o-mini" },
   "lead.score": { provider: "openai", model: "gpt-4o-mini" },
-  "website.audit": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+  "website.audit": { provider: "openai", model: "gpt-4o-mini" },
 };
 
 export function buildUsage(

@@ -114,6 +114,8 @@ export async function aiComplete(
     return result;
   } catch (err) {
     if (!(err instanceof AiProviderError)) throw err;
+    // Only fall back if the primary provider is anthropic (no credits); skip if already openai.
+    if (target.provider === "openai") throw err;
     const altProvider = fallbackProvider(target.provider);
     const altModel = req.model ?? fallbackModelFor(altProvider);
     const result = await callProvider(req, altProvider, altModel);

@@ -246,6 +246,7 @@ export default async function LeadDetailPage({
             }
           />
           <Field label="Business status" value={lead.businessStatus} />
+          <Field label="Data source" value={formatProvider(lead.provider)} />
           <Field
             label="First seen"
             value={lead.firstSeenAt.toISOString().slice(0, 10)}
@@ -509,6 +510,23 @@ function BusinessScaleCard({
       )}
     </div>
   );
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  google_places: "Google Places",
+  yelp_fusion: "Yelp Fusion",
+  osm: "OpenStreetMap",
+  foursquare: "Foursquare",
+  bing: "Bing Maps",
+  here: "HERE Maps",
+  tomtom: "TomTom",
+  geoapify: "Geoapify",
+  manual: "Manual entry",
+  csv_import: "CSV import",
+};
+function formatProvider(p: string | null): string | null {
+  if (!p) return null;
+  return PROVIDER_LABELS[p] ?? p.replaceAll("_", " ");
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
