@@ -43,7 +43,7 @@ export function stripe(): Stripe {
 /* -------------------------------------------------------------------------- */
 
 export interface CreateCustomerInput {
-  email: string;
+  email?: string;
   name?: string;
   metadata?: Record<string, string>;
 }
