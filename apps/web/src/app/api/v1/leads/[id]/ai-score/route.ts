@@ -86,16 +86,12 @@ export async function POST(
       websiteClassification: (lead as { websiteClassification?: string | null })
         .websiteClassification,
       websiteHealthScore: lead.websiteHealthScore,
-      hasSeoBasics: (lead as { hasSeoBasics?: boolean | null }).hasSeoBasics,
-      hasSchemaMarkup: (lead as { hasSchemaMarkup?: boolean | null })
-        .hasSchemaMarkup,
-      hasAnalytics: (lead as { hasAnalytics?: boolean | null }).hasAnalytics,
-      hasBookingForm: (lead as { hasBookingForm?: boolean | null })
-        .hasBookingForm,
-      hasLeadCaptureForm: (lead as { hasLeadCaptureForm?: boolean | null })
-        .hasLeadCaptureForm,
-      hasMobileViewport: (lead as { isMobileReady?: boolean | null })
-        .isMobileReady,
+      hasSeoBasics: lead.hasSeoBasics,
+      hasSchemaMarkup: lead.hasSchemaMarkup,
+      hasAnalytics: lead.hasAnalytics,
+      hasBookingForm: lead.hasBookingForm,
+      hasLeadCaptureForm: lead.hasLeadCaptureForm,
+      hasMobileViewport: lead.isMobileReady,
     },
   });
 

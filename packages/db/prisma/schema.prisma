@@ -535,6 +535,16 @@ model Lead {
   isMobileReady     Boolean?
   /// §8.1 — Whether a contact form / mailto link was found on the website.
   hasContactForm    Boolean?
+  /// §9.2 — Whether basic SEO meta tags (title + description) are present.
+  hasSeoBasics      Boolean?
+  /// §9.2 — Whether Open Graph / schema.org markup is present.
+  hasSchemaMarkup   Boolean?
+  /// §9.2 — Whether a web-analytics snippet (GA, GTM, etc.) was detected.
+  hasAnalytics      Boolean?
+  /// §9.2 — Whether an online booking / appointment form was found.
+  hasBookingForm    Boolean?
+  /// §9.2 — Whether a lead-capture / enquiry form was found.
+  hasLeadCaptureForm Boolean?
   /// §8.2 — Aggregate enrichment lifecycle status.
   /// One of: NOT_STARTED | IN_PROGRESS | COMPLETED | FAILED | PARTIALLY_COMPLETED
   enrichmentStatus  String         @default("NOT_STARTED")
