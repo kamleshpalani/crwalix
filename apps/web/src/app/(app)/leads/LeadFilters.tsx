@@ -318,7 +318,16 @@ export default function LeadFilters() {
           className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         >
           <option value="">Any</option>
-          {(["SME", "MID_MARKET", "LARGE", "UNKNOWN"] as const).map((s) => (
+          {(
+            [
+              "MICRO",
+              "SMALL",
+              "MEDIUM",
+              "LARGE",
+              "ENTERPRISE",
+              "UNKNOWN",
+            ] as const
+          ).map((s) => (
             <option key={s} value={s}>
               {BUSINESS_SCALE_LABELS[s]}
             </option>
