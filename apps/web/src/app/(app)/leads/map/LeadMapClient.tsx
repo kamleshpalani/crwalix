@@ -26,7 +26,7 @@ interface LeadMapClientProps {
 
 export default function LeadMapClient({ pins }: LeadMapClientProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<import("leaflet").Map | null>(null);
+  const mapRef = useRef<unknown>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
