@@ -8,7 +8,7 @@ interface Enrichment {
   leadName: string | null;
   kind: string;
   provider: string;
-  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "PARTIAL";
   attempts: number;
   cost: number;
   error: string | null;
@@ -24,6 +24,7 @@ const STATUS_TONES: Record<Enrichment["status"], string> = {
   SUCCEEDED: "bg-emerald-100 text-emerald-800",
   FAILED: "bg-rose-100 text-rose-800",
   SKIPPED: "bg-ink-200 text-ink-600",
+  PARTIAL: "bg-amber-50 text-amber-700",
 };
 
 const KINDS = [

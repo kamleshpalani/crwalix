@@ -36,6 +36,7 @@ export const TASK_DEFAULTS: Record<
   "support.answer": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
   "search.parse": { provider: "openai", model: "gpt-4o-mini" },
   "lead.score": { provider: "openai", model: "gpt-4o-mini" },
+  "website.audit": { provider: "anthropic", model: "claude-3-5-haiku-latest" },
 };
 
 export function buildUsage(

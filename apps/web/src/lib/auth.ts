@@ -257,6 +257,41 @@ export async function requireSuperAdmin(): Promise<
   return { userId: user.id };
 }
 
+// ---------------------------------------------------------------------------
+// §7 security checklist — requirePlan()
+//
+// Returns a 403 NextResponse if the org's active subscription is below the
+// required plan tier, or null if the plan gate passes.
+// ---------------------------------------------------------------------------
+
+const PLAN_ORDER = ["FREE", "STARTER", "GROWTH", "SCALE"] as const;
+type Plan = (typeof PLAN_ORDER)[number];
+
+/**
+ * Gate a route by minimum subscription plan.
+ * Returns null when the org is on `minPlan` or higher, or when `minPlan` is
+ * "FREE" (no gate needed). Returns a 403 response otherwise.
+ */
+export async function requirePlan(
+  orgId: string,
+  minPlan: Plan,
+): Promise<NextResponse | null> {
+  if (minPlan === "FREE") return null;
+  const sub = await prisma.subscription.findFirst({
+    where: { organizationId: orgId, status: "active" },
+    orderBy: { createdAt: "desc" },
+    select: { plan: true },
+  });
+  const orgPlan = (sub?.plan ?? "FREE") as Plan;
+  const orgLevel = PLAN_ORDER.indexOf(orgPlan);
+  const requiredLevel = PLAN_ORDER.indexOf(minPlan);
+  if (orgLevel >= requiredLevel) return null;
+  return NextResponse.json(
+    { error: { code: "PLAN_REQUIRED", minimumPlan: minPlan } },
+    { status: 403 },
+  );
+}
+
 /**
  * Phase 5.8 — API key authentication.
  *

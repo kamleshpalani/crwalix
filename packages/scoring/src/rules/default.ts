@@ -242,9 +242,322 @@ const dataFreshness: ScoreRule = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// §10.2 — New scoring rules for the 15 qualifying factors
+// ---------------------------------------------------------------------------
+
+/**
+ * §10.2 — Contact details: email availability (augments phone rule).
+ * Both phone + email = ideal dual-channel outreach.
+ */
+const emailContactRule: ScoreRule = {
+  id: "email_contact",
+  weight: 1,
+  applies: (l) => Boolean(l.email),
+  evaluate: (l) =>
+    l.email && l.email.trim().length > 5
+      ? {
+          contribution: 5,
+          reason: "Email address on file — dual-channel outreach possible",
+        }
+      : { contribution: 0, reason: "No email on file" },
+};
+
+/**
+ * §10.2 — Business location quality.
+ * Knowing the city and country increases outreach trustworthiness and allows
+ * geo-targeted pitches.
+ */
+const locationQualityRule: ScoreRule = {
+  id: "location_quality",
+  weight: 1,
+  applies: () => true,
+  evaluate: (l) => {
+    if (l.city && l.country) {
+      return {
+        contribution: 5,
+        reason: `Known location: ${l.city}, ${l.country}`,
+      };
+    }
+    if (l.city ?? l.country) {
+      return { contribution: 2, reason: "Partial location data" };
+    }
+    return {
+      contribution: -3,
+      reason: "Location unknown — harder to personalise pitch",
+    };
+  },
+};
+
+/**
+ * §10.2 — Business size (scale).
+ * Micro and small independent businesses are the ideal target for web/SEO
+ * packages. Enterprises are served by larger agencies; chains are penalised
+ * by the chain_likelihood rule separately.
+ */
+const businessScaleRule: ScoreRule = {
+  id: "business_scale",
+  weight: 1,
+  applies: (l) => Boolean(l.businessScale) && l.businessScale !== "UNKNOWN",
+  evaluate: (l) => {
+    switch (l.businessScale) {
+      case "MICRO":
+        return {
+          contribution: 10,
+          reason: "Micro business — ideal target for entry-level package",
+        };
+      case "SMALL":
+        return {
+          contribution: 8,
+          reason: "Small business — prime target for website + SEO",
+        };
+      case "MEDIUM":
+        return {
+          contribution: 3,
+          reason: "Medium business — potential upsell opportunity",
+        };
+      case "LARGE":
+        return {
+          contribution: -5,
+          reason: "Large business — budget cycle likely longer",
+        };
+      case "ENTERPRISE":
+        return {
+          contribution: -15,
+          reason: "Enterprise — not ideal for standard package sales",
+        };
+      default:
+        return { contribution: 0, reason: "Business scale not determined" };
+    }
+  },
+};
+
+/**
+ * §10.2 — Active social presence.
+ * Businesses that have social media but no website are the perfect upsell
+ * target (already digitally aware but under-served). Businesses with no
+ * social at all are harder to reach.
+ */
+const socialPresenceRule: ScoreRule = {
+  id: "social_presence",
+  weight: 1,
+  applies: () => true,
+  evaluate: (l) => {
+    const hasFacebook = Boolean(l.facebookUrl);
+    const hasInstagram = Boolean(l.instagramUrl);
+    if (hasFacebook && hasInstagram) {
+      return {
+        contribution: 8,
+        reason: "Active on Facebook + Instagram — digitally aware",
+      };
+    }
+    if (hasFacebook || hasInstagram) {
+      return {
+        contribution: 5,
+        reason: "Active on social media — reachable via digital channels",
+      };
+    }
+    return {
+      contribution: -3,
+      reason: "No social presence detected — harder to verify business",
+    };
+  },
+};
+
+/**
+ * §10.2 — Weak SEO signals.
+ * Missing SEO basics (title, meta description, h1, og tags) or schema markup
+ * is a direct upsell opportunity for SEO services.
+ */
+const seoWeaknessRule: ScoreRule = {
+  id: "seo_weakness",
+  weight: 1,
+  applies: (l) => l.hasSeoBasics !== null && l.hasSeoBasics !== undefined,
+  evaluate: (l) => {
+    if (l.hasSeoBasics === false && l.hasSchemaMarkup === false) {
+      return {
+        contribution: 18,
+        reason:
+          "Weak SEO: missing basics + no schema markup — strong SEO upsell",
+      };
+    }
+    if (l.hasSeoBasics === false) {
+      return {
+        contribution: 15,
+        reason: "Missing SEO basics (title/meta/h1) — direct SEO opportunity",
+      };
+    }
+    if (l.hasSchemaMarkup === false) {
+      return {
+        contribution: 5,
+        reason: "No schema markup — minor SEO improvement opportunity",
+      };
+    }
+    return { contribution: -5, reason: "Good SEO fundamentals in place" };
+  },
+};
+
+/** Service categories that rely on appointments (split for regex complexity). */
+const BOOKING_CATS_A =
+  /\b(salon|spa|dental|clinic|gym|fitness|yoga|pilates|restaurant|cafe|hotel|resort)\b/i;
+const BOOKING_CATS_B =
+  /\b(tutor|driving|repair|plumb|electrician|moving|cleaning|physio|consult|beauty)\b/i;
+const BOOKING_CATS_C =
+  /\b(aesthetic|barber|massage|nail|tattoo|photography|event)\b/i;
+
+function isBookingCategory(haystack: string): boolean {
+  return (
+    BOOKING_CATS_A.test(haystack) ||
+    BOOKING_CATS_B.test(haystack) ||
+    BOOKING_CATS_C.test(haystack)
+  );
+}
+
+/**
+ * §10.2 — Missing online booking system.
+ * Service businesses without an online booking form lose after-hours leads.
+ * This is a strong argument for a booking integration.
+ */
+const missingBookingRule: ScoreRule = {
+  id: "missing_booking",
+  weight: 1,
+  applies: (l) => {
+    if (l.hasBookingForm === null || l.hasBookingForm === undefined)
+      return false;
+    const haystack = `${l.categoryPrimary ?? ""} ${l.categories.join(" ")}`;
+    return isBookingCategory(haystack);
+  },
+  evaluate: (l) =>
+    l.hasBookingForm === false
+      ? {
+          contribution: 12,
+          reason:
+            "No online booking system — high-value booking integration upsell",
+        }
+      : {
+          contribution: -5,
+          reason: "Already has online booking — reduces urgency",
+        },
+};
+
+/**
+ * §10.2 — Missing lead capture form.
+ * No email capture form means the business is losing warm leads who visit
+ * the site but aren't ready to call. Easy win for conversion optimisation.
+ */
+const missingLeadCaptureRule: ScoreRule = {
+  id: "missing_lead_capture",
+  weight: 1,
+  applies: (l) =>
+    l.hasLeadCaptureForm !== null && l.hasLeadCaptureForm !== undefined,
+  evaluate: (l) =>
+    l.hasLeadCaptureForm === false
+      ? {
+          contribution: 10,
+          reason: "No lead capture form — losing warm website visitors",
+        }
+      : {
+          contribution: -3,
+          reason: "Has lead capture form — conversion basics covered",
+        },
+};
+
+/**
+ * §10.2 — Estimated ability to pay.
+ * Combines high-value category + SME scale + strong review presence as a
+ * proxy for business health and marketing budget availability.
+ */
+const abilityToPayRule: ScoreRule = {
+  id: "ability_to_pay",
+  weight: 1,
+  applies: (l) => {
+    const haystack = `${l.categoryPrimary ?? ""} ${l.categories.join(" ")}`;
+    return HIGH_VALUE_CATEGORY.test(haystack);
+  },
+  evaluate: (l) => {
+    const isSmallEnough =
+      !l.businessScale ||
+      ["MICRO", "SMALL", "MEDIUM", "UNKNOWN"].includes(l.businessScale);
+    const hasRevenue = typeof l.reviewCount === "number" && l.reviewCount >= 10;
+    if (isSmallEnough && hasRevenue) {
+      return {
+        contribution: 10,
+        reason:
+          "High-value category + established business — strong budget signal",
+      };
+    }
+    if (isSmallEnough) {
+      return {
+        contribution: 5,
+        reason: "High-value category with payment potential",
+      };
+    }
+    return {
+      contribution: 0,
+      reason: "Category fit present but scale uncertain",
+    };
+  },
+};
+
+/** Retail/product categories suitable for e-commerce pitching (split for regex complexity). */
+const ECOMMERCE_CATS_A =
+  /\b(retail|shop|store|boutique|fashion|clothing|jeweler|bakery|florist)\b/i;
+const ECOMMERCE_CATS_B =
+  /\b(gift|toys|electronics|furniture|hardware|pharmacy|optical|uniform)\b/i;
+const ECOMMERCE_CATS_C = /\b(tailor|laundry|printing|signage)\b/i;
+
+function isEcommerceCategory(haystack: string): boolean {
+  return (
+    ECOMMERCE_CATS_A.test(haystack) ||
+    ECOMMERCE_CATS_B.test(haystack) ||
+    ECOMMERCE_CATS_C.test(haystack)
+  );
+}
+
+/**
+ * §10.2 — Missing e-commerce / online store.
+ * Retail or product businesses with no apparent online store are candidates
+ * for e-commerce development services.
+ */
+const missingEcommerceRule: ScoreRule = {
+  id: "missing_ecommerce",
+  weight: 1,
+  applies: (l) => {
+    const haystack = `${l.categoryPrimary ?? ""} ${l.categories.join(" ")}`;
+    return isEcommerceCategory(haystack);
+  },
+  evaluate: (l) => {
+    // Treat a missing or outdated website + retail category as e-commerce gap.
+    if (
+      l.websiteHealth === WebsiteHealth.UNREACHABLE ||
+      l.websiteStatus === WebsiteStatus.HIGH_CONFIDENCE_NONE
+    ) {
+      return {
+        contribution: 15,
+        reason: "Retail business with no website — strong e-commerce upsell",
+      };
+    }
+    if (
+      l.websiteHealth === WebsiteHealth.OUTDATED ||
+      l.websiteHealth === WebsiteHealth.NEEDS_REVIEW
+    ) {
+      return {
+        contribution: 8,
+        reason:
+          "Retail business with outdated website — e-commerce upgrade opportunity",
+      };
+    }
+    return {
+      contribution: 3,
+      reason: "Retail category — potential for e-commerce enhancement",
+    };
+  },
+};
+
 export const defaultRuleset: Ruleset = {
-  version: "v1.2.0",
+  version: "v2.0.0",
   rules: [
+    // Existing rules
     missingWebsite,
     websiteHealthRule,
     businessStatusRule,
@@ -254,7 +567,17 @@ export const defaultRuleset: Ruleset = {
     contactReachability,
     chainLikelihood,
     dataFreshness,
+    // §10.2 — New rules
+    emailContactRule,
+    locationQualityRule,
+    businessScaleRule,
+    socialPresenceRule,
+    seoWeaknessRule,
+    missingBookingRule,
+    missingLeadCaptureRule,
+    abilityToPayRule,
+    missingEcommerceRule,
   ],
-  // Tiers per the UAE pitch model: 80–100 hot, 60–79 warm, 40–59 nurture.
-  tiers: { high: 80, medium: 60 },
+  // §10.1 — 5-tier thresholds
+  tiers: { critical: 80, high: 60, medium: 40, low: 20 },
 };

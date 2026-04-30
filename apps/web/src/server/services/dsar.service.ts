@@ -44,6 +44,12 @@ export interface DsarExportPayload {
     target: string | null;
     createdAt: string;
   }>;
+  consentRecords: Array<{
+    kind: string;
+    policyVersion: string;
+    accepted: boolean;
+    createdAt: string;
+  }>;
   notificationPreferences: Record<string, unknown> | null;
 }
 
@@ -101,7 +107,7 @@ export const dsarService = {
    * Called by the worker after the request is picked up.
    */
   async buildExport(orgId: string, userId: string): Promise<DsarExportPayload> {
-    const [user, memberships, auditLogs] = await Promise.all([
+    const [user, memberships, auditLogs, consentRecords] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -122,6 +128,16 @@ export const dsarService = {
         orderBy: { createdAt: "desc" },
         take: 500,
         select: { action: true, target: true, createdAt: true },
+      }),
+      prisma.consentRecord.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          kind: true,
+          policyVersion: true,
+          accepted: true,
+          createdAt: true,
+        },
       }),
     ]);
 
@@ -146,6 +162,12 @@ export const dsarService = {
         action: l.action,
         target: l.target,
         createdAt: l.createdAt.toISOString(),
+      })),
+      consentRecords: consentRecords.map((c) => ({
+        kind: c.kind,
+        policyVersion: c.policyVersion,
+        accepted: c.accepted,
+        createdAt: c.createdAt.toISOString(),
       })),
       notificationPreferences: null,
     };

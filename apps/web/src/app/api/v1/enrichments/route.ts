@@ -12,6 +12,9 @@ const Kind = z.enum([
   "SOCIAL",
   "COMPANY",
   "CONTACT",
+  "BUSINESS_DESCRIPTION",
+  "REVIEW_SUMMARY",
+  "WEBSITE_REPORT",
 ]);
 
 const Body = z.union([

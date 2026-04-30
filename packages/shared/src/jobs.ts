@@ -10,6 +10,12 @@ export const JobName = {
   ENRICH_SOCIAL: "enrich.social",
   ENRICH_COMPANY: "enrich.company",
   ENRICH_CONTACT: "enrich.contact",
+  /** §8.1 — AI-generated business description. */
+  ENRICH_BUSINESS_DESCRIPTION: "enrich.businessDescription",
+  /** §8.1 — AI-generated review summary. */
+  ENRICH_REVIEW_SUMMARY: "enrich.reviewSummary",
+  /** §9.3 — AI-generated full website audit report. */
+  ENRICH_WEBSITE_REPORT: "enrich.websiteReport",
   SCORE_LEAD: "score.lead",
   SCORE_BULK: "score.bulk",
   AI_SUMMARIZE: "ai.summarize",
@@ -37,6 +43,7 @@ export const QueueName = {
   SYSTEM: "system",
   CRM: "crm",
   OUTREACH: "outreach",
+  DOMAIN_EVENTS: "domain-events",
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -128,6 +135,9 @@ export type AnyJob =
   | ({ name: typeof JobName.ENRICH_SOCIAL } & EnrichmentJob)
   | ({ name: typeof JobName.ENRICH_COMPANY } & EnrichmentJob)
   | ({ name: typeof JobName.ENRICH_CONTACT } & EnrichmentJob)
+  | ({ name: typeof JobName.ENRICH_BUSINESS_DESCRIPTION } & EnrichmentJob)
+  | ({ name: typeof JobName.ENRICH_REVIEW_SUMMARY } & EnrichmentJob)
+  | ({ name: typeof JobName.ENRICH_WEBSITE_REPORT } & EnrichmentJob)
   | ({ name: typeof JobName.SCORE_LEAD } & ScoreLeadJob)
   | ({ name: typeof JobName.SCORE_BULK } & ScoreBulkJob)
   | ({
@@ -217,3 +227,122 @@ export interface DsarProcessJob {
   userId: string;
   type: "EXPORT" | "ERASE";
 }
+
+// ---------------------------------------------------------------------------
+// §6 Domain events — emitted onto the `domain-events` BullMQ queue so
+// independent consumers (scoring, enrichment, outreach, reporting) can react
+// without tight coupling to the producer.
+// ---------------------------------------------------------------------------
+
+export const DomainEventName = {
+  LEAD_DISCOVERED: "LeadDiscovered",
+  LEAD_QUALIFIED: "LeadQualified",
+  PROPOSAL_READY: "ProposalReady",
+  MESSAGE_SENT: "MessageSent",
+  MESSAGE_RECEIVED: "MessageReceived",
+  DEAL_STAGE_CHANGED: "DealStageChanged",
+  DEAL_WON: "DealWon",
+  INVOICE_PAID: "InvoicePaid",
+  SUBSCRIPTION_CANCELED: "SubscriptionCanceled",
+  TICKET_OPENED: "TicketOpened",
+  BUDGET_EXCEEDED: "BudgetExceeded",
+} as const;
+export type DomainEventName =
+  (typeof DomainEventName)[keyof typeof DomainEventName];
+
+// Shared envelope all domain events carry.
+export interface DomainEventEnvelope<T = unknown> {
+  eventName: DomainEventName;
+  organizationId: string;
+  occurredAt: string; // ISO-8601
+  payload: T;
+}
+
+// Per-event payloads
+export interface LeadDiscoveredPayload {
+  leadId: string;
+  searchRunId: string;
+}
+
+export interface LeadQualifiedPayload {
+  leadId: string;
+  score: number;
+  tier: string;
+}
+
+export interface ProposalReadyPayload {
+  proposalId: string;
+  dealId: string;
+}
+
+export interface MessageSentPayload {
+  outreachMessageId: string;
+  toEmail: string;
+  leadId?: string;
+  dealId?: string;
+  sequenceRunId?: string;
+}
+
+export interface MessageReceivedPayload {
+  inboundMessageId: string;
+  fromEmail: string;
+  leadId?: string;
+  dealId?: string;
+}
+
+export interface DealStageChangedPayload {
+  dealId: string;
+  fromStageId: string | null;
+  toStageId: string;
+  status: "OPEN" | "WON" | "LOST";
+}
+
+export interface DealWonPayload {
+  dealId: string;
+  value: number | null;
+}
+
+export interface InvoicePaidPayload {
+  invoiceId: string;
+  amountCents: number;
+}
+
+export interface SubscriptionCanceledPayload {
+  subscriptionId: string;
+  canceledAt: string;
+}
+
+export interface TicketOpenedPayload {
+  ticketId: string;
+  subject: string;
+}
+
+export interface BudgetExceededPayload {
+  kind: "ai" | "email" | "enrichment";
+  usedCents: number;
+  limitCents: number;
+}
+
+/** Discriminated union of all domain event envelopes. */
+export type AnyDomainEvent =
+  | (DomainEventEnvelope<LeadDiscoveredPayload> & {
+      eventName: "LeadDiscovered";
+    })
+  | (DomainEventEnvelope<LeadQualifiedPayload> & { eventName: "LeadQualified" })
+  | (DomainEventEnvelope<ProposalReadyPayload> & { eventName: "ProposalReady" })
+  | (DomainEventEnvelope<MessageSentPayload> & { eventName: "MessageSent" })
+  | (DomainEventEnvelope<MessageReceivedPayload> & {
+      eventName: "MessageReceived";
+    })
+  | (DomainEventEnvelope<DealStageChangedPayload> & {
+      eventName: "DealStageChanged";
+    })
+  | (DomainEventEnvelope<DealWonPayload> & { eventName: "DealWon" })
+  | (DomainEventEnvelope<InvoicePaidPayload> & { eventName: "InvoicePaid" })
+  | (DomainEventEnvelope<SubscriptionCanceledPayload> & {
+      eventName: "SubscriptionCanceled";
+    })
+  | (DomainEventEnvelope<TicketOpenedPayload> & { eventName: "TicketOpened" })
+  | (DomainEventEnvelope<BudgetExceededPayload> & {
+      eventName: "BudgetExceeded";
+    });

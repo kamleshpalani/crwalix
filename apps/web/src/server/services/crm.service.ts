@@ -15,6 +15,7 @@ import {
 import { enqueue } from "@/lib/queue";
 import { projectKickoffService } from "./project-kickoff.service";
 import { emitNotification } from "@/server/lib/notify";
+import { publishDomainEvent } from "@/server/lib/domain-events";
 
 /**
  * CRM service: pipelines, deals, activities.
@@ -278,10 +279,31 @@ export const crmService = {
       const becameWon =
         existing.status !== DealStatus.WON && updated.status === DealStatus.WON;
 
-      return { updated, becameWon };
+      return {
+        updated,
+        becameWon,
+        stageChange: stageChanged
+          ? { fromStageId: existing.stageId, toStageId: updated.stageId }
+          : null,
+      };
     });
 
     if (!result) return null;
+
+    // §6 domain event — DealStageChanged.
+    if (result.stageChange) {
+      void publishDomainEvent({
+        eventName: "DealStageChanged",
+        organizationId: orgId,
+        occurredAt: new Date().toISOString(),
+        payload: {
+          dealId: result.updated.id,
+          fromStageId: result.stageChange.fromStageId,
+          toStageId: result.stageChange.toStageId,
+          status: result.updated.status as "OPEN" | "WON" | "LOST",
+        },
+      });
+    }
 
     // Notify on the won transition (whether or not we also create a project).
     if (result.becameWon) {
@@ -292,6 +314,16 @@ export const crmService = {
         body: `${formatAmount(result.updated.amountCents, result.updated.currency)} closed.`,
         href: `/pipeline?dealId=${result.updated.id}`,
         data: { dealId: result.updated.id },
+      });
+      // §6 domain event — DealWon.
+      void publishDomainEvent({
+        eventName: "DealWon",
+        organizationId: orgId,
+        occurredAt: new Date().toISOString(),
+        payload: {
+          dealId: result.updated.id,
+          value: result.updated.amountCents ?? null,
+        },
       });
     }
 

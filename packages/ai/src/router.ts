@@ -1,4 +1,4 @@
-import { prisma } from "@crawlix/db";
+import { prisma, checkAiBudget } from "@crawlix/db";
 import { openaiComplete } from "./providers/openai";
 import { anthropicComplete } from "./providers/anthropic";
 import { TASK_DEFAULTS } from "./pricing";
@@ -46,6 +46,7 @@ async function callProvider(
 /**
  * Persist token usage + estimated USD cost to the existing UsageLog table
  * so per-org spend dashboards / budget enforcement can read from one place.
+ * Also writes a UsageEvent (kind=ai.tokens) per the §5 spec.
  */
 async function recordUsage(
   req: AiCompleteRequest,
@@ -69,17 +70,43 @@ async function recordUsage(
   } catch {
     // Usage logging must never break the AI call.
   }
+  try {
+    await prisma.usageEvent.create({
+      data: {
+        organizationId: req.organizationId,
+        kind: "ai.tokens",
+        quantity: result.usage.totalTokens,
+        costMicroCents: Math.round((result.usage.costUsd ?? 0) * 100_000_000),
+        meta: {
+          taskKind: req.taskKind,
+          provider: result.provider,
+          model: result.model,
+          promptTokens: result.usage.promptTokens,
+          completionTokens: result.usage.completionTokens,
+        },
+      },
+    });
+  } catch {
+    // UsageEvent logging must never break the AI call.
+  }
 }
 
 /**
  * Single entrypoint for all LLM calls.
+ * - Enforces per-org CostBudget before dispatching (Phase 2.8)
  * - Routes by task kind, with optional explicit provider/model override
  * - Falls back to the alternate provider on AiProviderError
- * - Records token usage + estimated cost to UsageLog
+ * - Records token usage + estimated cost to UsageLog + UsageEvent
  */
 export async function aiComplete(
   req: AiCompleteRequest,
 ): Promise<AiCompleteResult> {
+  // Phase 2.8: enforce per-org AI budget before any LLM call.
+  const budget = await checkAiBudget(req.organizationId);
+  if (!budget.allowed) {
+    throw new Error(budget.reason ?? "AI budget exceeded");
+  }
+
   const target = resolveTarget(req);
   try {
     const result = await callProvider(req, target.provider, target.model);

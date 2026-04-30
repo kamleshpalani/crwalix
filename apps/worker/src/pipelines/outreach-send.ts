@@ -25,6 +25,8 @@ import {
 import { sendEmail } from "@crawlix/email";
 import type { OutreachSendJob } from "@crawlix/shared";
 import { logger } from "../lib/logger";
+import { emitUsage } from "../lib/usage";
+import { publishDomainEvent } from "../lib/domain-events";
 
 function appBaseUrl(): string {
   return (
@@ -156,6 +158,28 @@ export async function runOutreachSend(job: OutreachSendJob): Promise<void> {
       }),
     ).catch(() => {
       /* usage logging must never break the send flow */
+    });
+
+    void emitUsage({
+      organizationId: job.organizationId,
+      kind: "email.sent",
+      quantity: 1,
+      refId: message.id,
+      meta: { provider: result.provider },
+    });
+
+    // §6 domain event — MessageSent.
+    void publishDomainEvent({
+      eventName: "MessageSent",
+      organizationId: job.organizationId,
+      occurredAt: new Date().toISOString(),
+      payload: {
+        outreachMessageId: message.id,
+        toEmail: job.toEmail,
+        leadId: job.leadId,
+        dealId: job.dealId,
+        sequenceRunId: job.sequenceRunId,
+      },
     });
 
     if (job.sequenceRunId) {

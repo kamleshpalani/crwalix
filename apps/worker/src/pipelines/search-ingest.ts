@@ -1,5 +1,5 @@
-import { Prisma } from '@prisma/client';
-import { withOrg } from '@crawlix/db';
+import { Prisma } from "@prisma/client";
+import { withOrg } from "@crawlix/db";
 import {
   EnrichmentKind,
   EnrichmentStatus,
@@ -9,25 +9,29 @@ import {
   WebsiteStatus,
   classifyBusinessScale,
   type NormalizedLead,
-  type SearchIngestJob
-} from '@crawlix/shared';
-import { Queue } from 'bullmq';
-import { getConnection } from '../lib/redis';
-import { logger } from '../lib/logger';
-import { normalizedName } from './normalize';
-import { resolveSearchProvider } from '../providers/index';
+  type SearchIngestJob,
+} from "@crawlix/shared";
+import { Queue } from "bullmq";
+import { getConnection } from "../lib/redis";
+import { logger } from "../lib/logger";
+import { normalizedName } from "./normalize";
+import { resolveSearchProvider } from "../providers/index";
 import {
   buildMergeData,
   digitsOnly,
   findDuplicateLead,
-  normalizeAddress
-} from './dedupe';
-import { notify } from '../lib/notify';
+  normalizeAddress,
+} from "./dedupe";
+import { notify } from "../lib/notify";
+import { emitUsage } from "../lib/usage";
+import { publishDomainEvent } from "../lib/domain-events";
 
 let _scoringQueue: Queue | null = null;
 function scoringQueue(): Queue {
   if (!_scoringQueue) {
-    _scoringQueue = new Queue(QueueName.SCORING, { connection: getConnection() });
+    _scoringQueue = new Queue(QueueName.SCORING, {
+      connection: getConnection(),
+    });
   }
   return _scoringQueue;
 }
@@ -35,20 +39,22 @@ function scoringQueue(): Queue {
 let _enrichmentQueue: Queue | null = null;
 function enrichmentQueue(): Queue {
   if (!_enrichmentQueue) {
-    _enrichmentQueue = new Queue(QueueName.ENRICHMENT, { connection: getConnection() });
+    _enrichmentQueue = new Queue(QueueName.ENRICHMENT, {
+      connection: getConnection(),
+    });
   }
   return _enrichmentQueue;
 }
 
 export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
-  const log = logger.child({ job: 'search.ingest', runId: job.searchRunId });
-  log.info({ provider: job.provider }, 'search ingest start');
+  const log = logger.child({ job: "search.ingest", runId: job.searchRunId });
+  log.info({ provider: job.provider }, "search ingest start");
 
   await withOrg(job.organizationId, (tx) =>
     tx.searchRun.update({
       where: { id: job.searchRunId },
-      data: { status: 'RUNNING', startedAt: new Date() }
-    })
+      data: { status: "RUNNING", startedAt: new Date() },
+    }),
   );
 
   let totalFetched = 0;
@@ -79,15 +85,15 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       logger: {
         info: (...a: unknown[]) => log.info(a),
         warn: (...a: unknown[]) => log.warn(a),
-        error: (...a: unknown[]) => log.error(a)
+        error: (...a: unknown[]) => log.error(a),
       },
       signal: ctrl.signal,
       credentials: {
-        GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY ?? '',
-        FOURSQUARE_API_KEY: process.env.FOURSQUARE_API_KEY ?? '',
-        YELP_FUSION_API_KEY: process.env.YELP_FUSION_API_KEY ?? ''
+        GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY ?? "",
+        FOURSQUARE_API_KEY: process.env.FOURSQUARE_API_KEY ?? "",
+        YELP_FUSION_API_KEY: process.env.YELP_FUSION_API_KEY ?? "",
       },
-      meter: async () => {}
+      meter: async () => {},
     };
 
     let cursor: string | undefined;
@@ -97,12 +103,13 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
     // Rotate ranking per run so back-to-back re-runs surface different
     // leads instead of the same top-N. Derived deterministically from
     // `searchRunId` so retries of the same run are stable.
-    const RANKS = ['relevance', 'distance', 'rating', 'review_count'] as const;
+    const RANKS = ["relevance", "distance", "rating", "review_count"] as const;
     let seedHash = 0;
-    for (const ch of job.searchRunId) seedHash = (seedHash * 31 + ch.charCodeAt(0)) | 0;
+    for (const ch of job.searchRunId)
+      seedHash = (seedHash * 31 + ch.charCodeAt(0)) | 0;
     const rotatedQuery = {
       ...job.query,
-      rankPreference: RANKS[Math.abs(seedHash) % RANKS.length]
+      rankPreference: RANKS[Math.abs(seedHash) % RANKS.length],
     };
 
     // Keep paging until we accumulate `limit` *new* (inserted) leads, the
@@ -147,14 +154,14 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
               leadId: inserted.lead.id,
               searchRunId: job.searchRunId,
               provider: job.provider,
-              rawPayload: (r.raw ?? {}) as Prisma.InputJsonValue
-            }
+              rawPayload: (r.raw ?? {}) as Prisma.InputJsonValue,
+            },
           });
         }
 
         await tx.searchRun.update({
           where: { id: job.searchRunId },
-          data: { totalFetched, totalInserted, totalDuplicate }
+          data: { totalFetched, totalInserted, totalDuplicate },
         });
       });
 
@@ -171,8 +178,12 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       await scoringQueue().addBulk(
         insertedLeadIds.map((leadId) => ({
           name: JobName.SCORE_LEAD,
-          data: { organizationId: job.organizationId, leadId, rulesetVersion: 'v1.0.0' }
-        }))
+          data: {
+            organizationId: job.organizationId,
+            leadId,
+            rulesetVersion: "v1.0.0",
+          },
+        })),
       );
     }
 
@@ -180,14 +191,20 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       tx.searchRun.update({
         where: { id: job.searchRunId },
         data: {
-          status: 'COMPLETED',
+          status: "COMPLETED",
           finishedAt: new Date(),
           totalFetched,
           totalInserted,
           totalDuplicate,
-          metadata: { totalSkipped, totalFiltered, leadFocus, warning, rankPreference: rotatedQuery.rankPreference }
-        }
-      })
+          metadata: {
+            totalSkipped,
+            totalFiltered,
+            leadFocus,
+            warning,
+            rankPreference: rotatedQuery.rankPreference,
+          },
+        },
+      }),
     );
 
     // Auto-trigger website audits for every inserted lead with a website,
@@ -198,8 +215,8 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       const leadsWithWebsites = await withOrg(job.organizationId, (tx) =>
         tx.lead.findMany({
           where: { id: { in: insertedLeadIds }, website: { not: null } },
-          select: { id: true }
-        })
+          select: { id: true },
+        }),
       );
       if (leadsWithWebsites.length > 0) {
         const enrichments = await withOrg(job.organizationId, async (tx) => {
@@ -210,11 +227,11 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
                   organizationId: job.organizationId,
                   leadId: l.id,
                   kind: EnrichmentKind.WEBSITE_VALIDATION,
-                  provider: 'crawlix-auditor',
-                  status: EnrichmentStatus.QUEUED
-                }
-              })
-            )
+                  provider: "crawlix-auditor",
+                  status: EnrichmentStatus.QUEUED,
+                },
+              }),
+            ),
           );
           return created;
         });
@@ -226,11 +243,11 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
               enrichmentId: e.id,
               leadId: e.leadId,
               kind: EnrichmentKind.WEBSITE_VALIDATION,
-              provider: 'crawlix-auditor'
-            }
-          }))
+              provider: "crawlix-auditor",
+            },
+          })),
         );
-        log.info({ count: enrichments.length }, 'queued website audits');
+        log.info({ count: enrichments.length }, "queued website audits");
       }
     }
 
@@ -238,7 +255,7 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
       tx.usageLog.create({
         data: {
           organizationId: job.organizationId,
-          kind: 'search.run',
+          kind: "search.run",
           units: 1,
           metadata: {
             provider: job.provider,
@@ -248,15 +265,23 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
             skipped: totalSkipped,
             filtered: totalFiltered,
             leadFocus,
-            warning
-          }
-        }
-      })
+            warning,
+          },
+        },
+      }),
     );
 
     log.info(
-      { totalFetched, totalInserted, totalDuplicate, totalSkipped, totalFiltered, leadFocus, warning },
-      'search ingest done'
+      {
+        totalFetched,
+        totalInserted,
+        totalDuplicate,
+        totalSkipped,
+        totalFiltered,
+        leadFocus,
+        warning,
+      },
+      "search ingest done",
     );
 
     // LEADS_DISCOVERED notification — only fired for runs the scheduler
@@ -265,27 +290,46 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
     if (job.options.notifyOnNewLeads && totalInserted > 0) {
       await notify({
         organizationId: job.organizationId,
-        kind: 'LEADS_DISCOVERED',
-        title: `${totalInserted} new lead${totalInserted === 1 ? '' : 's'} discovered`,
-        body: `${job.provider} surfaced ${totalInserted} newly listed business${totalInserted === 1 ? '' : 'es'} for your scheduled search.`,
+        kind: "LEADS_DISCOVERED",
+        title: `${totalInserted} new lead${totalInserted === 1 ? "" : "s"} discovered`,
+        body: `${job.provider} surfaced ${totalInserted} newly listed business${totalInserted === 1 ? "" : "es"} for your scheduled search.`,
         href: `/leads?discoveredWithin=24h`,
         data: {
           provider: job.provider,
           searchRunId: job.searchRunId,
           inserted: totalInserted,
           fetched: totalFetched,
-          leadIds: insertedLeadIds.slice(0, 25)
-        }
+          leadIds: insertedLeadIds.slice(0, 25),
+        },
       });
+    }
+    if (totalInserted > 0) {
+      void emitUsage({
+        organizationId: job.organizationId,
+        kind: "lead.discovered",
+        quantity: totalInserted,
+        refId: job.searchRunId,
+        meta: { provider: job.provider, searchRunId: job.searchRunId },
+      });
+      // §6 domain events — emit LeadDiscovered for each inserted lead so
+      // scoring/enrichment consumers can react independently.
+      for (const leadId of insertedLeadIds) {
+        void publishDomainEvent({
+          eventName: "LeadDiscovered",
+          organizationId: job.organizationId,
+          occurredAt: new Date().toISOString(),
+          payload: { leadId, searchRunId: job.searchRunId },
+        });
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error({ err: message }, 'search ingest failed');
+    log.error({ err: message }, "search ingest failed");
     await withOrg(job.organizationId, (tx) =>
       tx.searchRun.update({
         where: { id: job.searchRunId },
-        data: { status: 'FAILED', finishedAt: new Date(), error: message }
-      })
+        data: { status: "FAILED", finishedAt: new Date(), error: message },
+      }),
     );
     throw err;
   }
@@ -294,7 +338,7 @@ export async function runSearchIngest(job: SearchIngestJob): Promise<void> {
 async function upsertLead(
   tx: Prisma.TransactionClient,
   organizationId: string,
-  r: NormalizedLead
+  r: NormalizedLead,
 ) {
   // 1. Exact same provider + externalPlaceId → straight update.
   const existing = await tx.lead.findUnique({
@@ -302,9 +346,9 @@ async function upsertLead(
       organizationId_provider_externalPlaceId: {
         organizationId,
         provider: r.provider,
-        externalPlaceId: r.externalPlaceId
-      }
-    }
+        externalPlaceId: r.externalPlaceId,
+      },
+    },
   });
 
   if (existing) {
@@ -322,7 +366,7 @@ async function upsertLead(
     if (target) {
       const merged = await tx.lead.update({
         where: { id: target.id },
-        data: buildMergeData(target, r)
+        data: buildMergeData(target, r),
       });
       // Audit trail (Section 7.4: maintain merge history).
       await tx.leadMergeHistory.create({
@@ -362,8 +406,8 @@ async function upsertLead(
       phoneNormalized: digitsOnly(r.phone) || null,
       email: r.email ?? null,
       emailNormalized: r.email ? r.email.toLowerCase().trim() : null,
-      googlePlaceId: r.provider === 'google_places' ? r.externalPlaceId : null,
-      yelpBusinessId: r.provider === 'yelp_fusion' ? r.externalPlaceId : null,
+      googlePlaceId: r.provider === "google_places" ? r.externalPlaceId : null,
+      yelpBusinessId: r.provider === "yelp_fusion" ? r.externalPlaceId : null,
       website: r.website,
       websiteStatus: r.website ? WebsiteStatus.EXISTS : WebsiteStatus.UNKNOWN,
       sourceUrl: r.sourceUrl,
@@ -382,12 +426,12 @@ async function upsertLead(
       businessScaleConfidence: classification.confidence,
       businessScaleSignals: classification as unknown as Prisma.InputJsonValue,
       googleProfileUrl:
-        r.provider === 'google_places' && r.externalPlaceId
+        r.provider === "google_places" && r.externalPlaceId
           ? `https://www.google.com/maps/place/?q=place_id:${r.externalPlaceId}`
           : null,
       rawPayload: (r.raw ?? {}) as Prisma.InputJsonValue,
-      normalizedPayload: r as unknown as Prisma.InputJsonValue
-    }
+      normalizedPayload: r as unknown as Prisma.InputJsonValue,
+    },
   });
   return { lead, created: true, merged: false, skipped: false };
 }

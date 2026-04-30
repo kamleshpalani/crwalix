@@ -13,7 +13,8 @@ export type AiTaskKind =
   | "report.weekly"
   | "support.answer"
   | "search.parse"
-  | "lead.score";
+  | "lead.score"
+  | "website.audit";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";

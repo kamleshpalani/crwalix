@@ -2,6 +2,7 @@ import { prisma } from "@crawlix/db";
 import { draftProposal } from "@crawlix/ai";
 import type { GenerateProposalJob } from "@crawlix/shared";
 import { logger } from "../lib/logger";
+import { publishDomainEvent } from "../lib/domain-events";
 
 /**
  * crm.generateProposal
@@ -79,7 +80,7 @@ export async function runGenerateProposal(
   });
   const version = (last?.version ?? 0) + 1;
 
-  await prisma.proposal.create({
+  const proposal = await prisma.proposal.create({
     data: {
       organizationId,
       dealId,
@@ -107,4 +108,12 @@ export async function runGenerateProposal(
     },
     "proposal generated",
   );
+
+  // §6 domain event — ProposalReady.
+  void publishDomainEvent({
+    eventName: "ProposalReady",
+    organizationId,
+    occurredAt: new Date().toISOString(),
+    payload: { proposalId: proposal.id, dealId },
+  });
 }
