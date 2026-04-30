@@ -861,7 +861,7 @@ function buildLeadScorePrompt(input: AiScoreLeadInput["lead"]): string {
   return `Evaluate this lead:\n\n${lines}`;
 }
 
-function clampScore(n: unknown): number {
+function clampLeadScore(n: unknown): number {
   let v: number;
   if (typeof n === "number") {
     v = n;
@@ -910,7 +910,7 @@ export async function scoreLeadWithAi(
     // fallback to defaults below
   }
 
-  const score = clampScore(parsed.score);
+  const score = clampLeadScore(parsed.score);
   const tier =
     typeof parsed.tier === "string" && VALID_TIERS.has(parsed.tier)
       ? (parsed.tier as AiScoreLeadResult["tier"])
