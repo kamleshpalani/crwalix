@@ -115,13 +115,12 @@ export async function POST(
     kinds: parsed.data.kinds,
   });
 
-  await auditService.log({
-    organizationId: ctx.orgId,
-    actorId: ctx.userId,
+  await auditService.record({
+    orgId: ctx.orgId,
+    userId: ctx.userId,
     action: "enrichment.queue",
-    resourceType: "lead",
-    resourceId: params.id,
-    meta: { leadId: params.id, kinds: parsed.data.kinds },
+    target: params.id,
+    metadata: { leadId: params.id, kinds: parsed.data.kinds },
   });
 
   return NextResponse.json({ results }, { status: 202 });
