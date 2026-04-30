@@ -161,6 +161,8 @@ export const EnrichmentKind = {
   BUSINESS_DESCRIPTION: "BUSINESS_DESCRIPTION",
   /** §8.1 — AI-generated review summary from rating + review count. */
   REVIEW_SUMMARY: "REVIEW_SUMMARY",
+  /** §9.3 — AI-powered full website audit report. */
+  WEBSITE_REPORT: "WEBSITE_REPORT",
 } as const;
 export type EnrichmentKind =
   (typeof EnrichmentKind)[keyof typeof EnrichmentKind];
