@@ -4,7 +4,7 @@
 // Fire-and-forget helper that writes a UsageEvent row. Errors are swallowed
 // so that metering never interrupts the primary path.
 
-import { prisma } from "@crawlix/db";
+import { prisma, Prisma } from "@crawlix/db";
 
 export interface EmitUsageInput {
   organizationId: string;
@@ -30,7 +30,7 @@ export async function emitUsage(input: EmitUsageInput): Promise<void> {
         quantity: input.quantity ?? 1,
         costMicroCents: input.costMicroCents ?? 0,
         refId: input.refId ?? null,
-        meta: input.meta ?? null,
+        meta: input.meta ?? Prisma.DbNull,
       },
     });
   } catch {
