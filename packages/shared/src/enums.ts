@@ -423,24 +423,23 @@ export function getServicePitch(input: ServicePitchInput): ServicePitch[] {
  *   LARGE      — national or multi-national, 251–999 staff
  *   ENTERPRISE — public company / franchise group, 1000+ staff
  *   UNKNOWN    — insufficient signals to classify
- *
- * Previously this was a 3-tier SME/MID_MARKET/LARGE enum.
- * Business-scale classification. Drives sales-team segmentation: MICRO/SMALL get
- * lightweight website packages, mid-market get redesign + integrations,
- * large enterprises get bespoke proposals.
  */
 export const BusinessScale = {
-  SME: "SME",
-  MID_MARKET: "MID_MARKET",
+  MICRO: "MICRO",
+  SMALL: "SMALL",
+  MEDIUM: "MEDIUM",
   LARGE: "LARGE",
+  ENTERPRISE: "ENTERPRISE",
   UNKNOWN: "UNKNOWN",
 } as const;
 export type BusinessScale = (typeof BusinessScale)[keyof typeof BusinessScale];
 
 export const BUSINESS_SCALE_LABELS: Record<BusinessScale, string> = {
-  SME: "Small / SME",
-  MID_MARKET: "Mid-market",
-  LARGE: "Large enterprise",
+  MICRO: "Micro business",
+  SMALL: "Small business",
+  MEDIUM: "Medium business",
+  LARGE: "Large business",
+  ENTERPRISE: "Enterprise",
   UNKNOWN: "Unclassified",
 };
 
@@ -461,6 +460,12 @@ export interface BusinessScaleInput {
   hasWebsite?: boolean | null;
   /** LinkedIn employee-count band, when known (e.g. "11-50", "1001-5000"). */
   linkedinEmployeeRange?: string | null;
+  /** §11 — Number of physical locations / branches. */
+  locationCount?: number | null;
+  /** §11 — Publicly available revenue band string (e.g. "$1M–$10M"). */
+  revenueEstimate?: string | null;
+  /** §11 — Estimated headcount from public sources; takes precedence over linkedinEmployeeRange. */
+  employeeEstimate?: number | null;
 }
 
 export interface BusinessScaleSignal {
@@ -477,6 +482,36 @@ export interface BusinessScaleResult {
   reasoning: string;
 }
 
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
+
+type ScaleTier = Exclude<BusinessScale, "UNKNOWN">;
+type BucketMap = Record<ScaleTier, number>;
+
+// ---------------------------------------------------------------------------
+// Keyword lists — checked against name + categories haystack
+// ---------------------------------------------------------------------------
+
+const ENTERPRISE_KEYWORDS = [
+  "multinational",
+  "conglomerate",
+  "plc",
+  "publicly traded",
+  "stock exchange",
+  "airline",
+  "telecommunications",
+  "telecom",
+  "pharmaceuticals",
+  "pharmaceutical",
+  "oil & gas",
+  "utilities",
+  "central bank",
+  "investment bank",
+  "international",
+  "global",
+];
+
 const LARGE_KEYWORDS = [
   "corporation",
   "corp",
@@ -484,8 +519,6 @@ const LARGE_KEYWORDS = [
   "industries",
   "group",
   "holdings",
-  "international",
-  "global",
   "manufacturing",
   "manufacturer",
   "factory",
@@ -495,16 +528,28 @@ const LARGE_KEYWORDS = [
   "distributor",
   "hospital",
   "university",
-  "airline",
   "bank",
   "insurance",
-  "pharmaceuticals",
-  "oil & gas",
-  "utilities",
-  "telecom",
 ];
 
-const SME_KEYWORDS = [
+const MEDIUM_KEYWORDS = [
+  "agency",
+  "firm",
+  "consulting",
+  "consultancy",
+  "clinic",
+  "dental group",
+  "law firm",
+  "medical center",
+  "real estate",
+  "dealership",
+  "showroom",
+  "academy",
+  "training center",
+  "fitness center",
+];
+
+const SMALL_KEYWORDS = [
   "boutique",
   "salon",
   "barber",
@@ -530,58 +575,214 @@ const SME_KEYWORDS = [
   "videographer",
 ];
 
-const MID_KEYWORDS = [
-  "agency",
-  "firm",
-  "consulting",
-  "consultancy",
-  "clinic",
-  "dental group",
-  "law firm",
-  "medical center",
-  "real estate",
-  "dealership",
-  "showroom",
-  "academy",
-  "training center",
-  "fitness center",
+const MICRO_KEYWORDS = [
+  "sole trader",
+  "self-employed",
+  "home-based",
+  "owner-operated",
+  "freelance",
+  "mobile service",
+  "one man",
+  "one woman",
+  "independent contractor",
 ];
 
+/** Enterprise CMS / platform tech that signals a large-budget operation. */
+const ENTERPRISE_TECH = new Set([
+  "sitecore",
+  "adobe experience",
+  "oracle",
+  "sap",
+  "salesforce cms",
+  "drupal",
+]);
+
+// ---------------------------------------------------------------------------
+// bandSize — parse "11-50" → 30 (midpoint) or "5000+" → 5000
+// ---------------------------------------------------------------------------
 function bandSize(range: string | null | undefined): number | null {
   if (!range) return null;
-  const m = String(range)
-    .replace(/[, ]/g, "")
-    .match(/(\d+)\s*[-–]\s*(\d+)/);
-  if (m) return Math.round((Number(m[1]) + Number(m[2])) / 2);
-  const single = String(range).match(/(\d+)\+?/);
-  return single ? Number(single[1]) : null;
+  const clean = String(range).replaceAll(/[, ]/g, "");
+  const rangeMatch = /(\d+)[-–](\d+)/.exec(clean);
+  if (rangeMatch)
+    return Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
+  const singleMatch = /(\d+)\+?/.exec(clean);
+  return singleMatch ? Number(singleMatch[1]) : null;
 }
 
+// ---------------------------------------------------------------------------
+// parseRevenueMillions — "$1M–$10M" → 10, "$500K" → 0.5, "$2B" → 2000
+// ---------------------------------------------------------------------------
+function parseRevenueMillions(
+  estimate: string | null | undefined,
+): number | null {
+  if (!estimate) return null;
+  const pattern = /(\d+(?:\.\d+)?)\s*([KMBkmb]?)/g;
+  const values: number[] = [];
+  let m = pattern.exec(estimate);
+  while (m !== null) {
+    const v = Number(m[1]);
+    const unit = m[2].toUpperCase();
+    if (unit === "K") values.push(v / 1000);
+    else if (unit === "B") values.push(v * 1000);
+    else values.push(v);
+    m = pattern.exec(estimate);
+  }
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal scorers — each mutates buckets + signals in-place
+// ---------------------------------------------------------------------------
+
+function scoreFromKeywords(
+  hay: string,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  if (ENTERPRISE_KEYWORDS.some((k) => hay.includes(k)))
+    push("ENTERPRISE", 25, "name/category implies enterprise scale");
+  if (LARGE_KEYWORDS.some((k) => hay.includes(k)))
+    push("LARGE", 20, "name/category implies large business");
+  if (MEDIUM_KEYWORDS.some((k) => hay.includes(k)))
+    push("MEDIUM", 18, "category implies mid-size firm");
+  if (SMALL_KEYWORDS.some((k) => hay.includes(k)))
+    push("SMALL", 18, "category implies small/independent business");
+  if (MICRO_KEYWORDS.some((k) => hay.includes(k)))
+    push("MICRO", 20, "name/category implies micro/sole-trader");
+}
+
+function scoreFromReviews(
+  reviews: number,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  if (reviews >= 5000)
+    push("ENTERPRISE", 20, `${reviews} reviews — household-name scale`);
+  else if (reviews >= 1000)
+    push("LARGE", 15, `${reviews} reviews — major footprint`);
+  else if (reviews >= 300)
+    push("MEDIUM", 12, `${reviews} reviews — established footprint`);
+  else if (reviews >= 50) push("SMALL", 10, `${reviews} reviews`);
+  else if (reviews >= 10)
+    push("SMALL", 8, `${reviews} reviews — growing presence`);
+  else if (reviews > 0) push("MICRO", 12, `only ${reviews} reviews`);
+  else push("MICRO", 10, "no review history");
+}
+
+function scoreFromHeadcount(
+  headcount: number | null,
+  rangeLabel: string,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  if (headcount === null) return;
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  if (headcount >= 1000) push("ENTERPRISE", 30, `${rangeLabel} employees`);
+  else if (headcount >= 201) push("LARGE", 25, `${rangeLabel} employees`);
+  else if (headcount >= 21) push("MEDIUM", 20, `${rangeLabel} employees`);
+  else if (headcount >= 3) push("SMALL", 20, `${rangeLabel} employees`);
+  else push("MICRO", 20, `${rangeLabel} employees — micro team`);
+}
+
+function scoreFromLocations(
+  locationCount: number | null | undefined,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  if (!locationCount) return;
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  if (locationCount >= 21) push("ENTERPRISE", 20, `${locationCount} locations`);
+  else if (locationCount >= 6) push("LARGE", 15, `${locationCount} locations`);
+  else if (locationCount >= 2) push("MEDIUM", 10, `${locationCount} locations`);
+  else push("SMALL", 8, "single location");
+}
+
+function scoreFromRevenue(
+  revenueEstimate: string | null | undefined,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  const revM = parseRevenueMillions(revenueEstimate);
+  if (revM === null) return;
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  if (revM >= 500) push("ENTERPRISE", 20, `revenue ~${revenueEstimate}`);
+  else if (revM >= 50) push("LARGE", 15, `revenue ~${revenueEstimate}`);
+  else if (revM >= 5) push("MEDIUM", 12, `revenue ~${revenueEstimate}`);
+  else if (revM >= 0.5) push("SMALL", 12, `revenue ~${revenueEstimate}`);
+  else push("MICRO", 15, `revenue ~${revenueEstimate}`);
+}
+
+function scoreFromWebsite(
+  input: BusinessScaleInput,
+  buckets: BucketMap,
+  signals: BusinessScaleSignal[],
+): void {
+  const push = (scale: ScaleTier, weight: number, signal: string) => {
+    buckets[scale] += weight;
+    signals.push({ scale, weight, signal });
+  };
+  const tech = new Set((input.technologies ?? []).map((t) => t.toLowerCase()));
+  const score = input.websiteHealthScore ?? null;
+
+  if (input.hasWebsite === false) push("MICRO", 10, "no website on file");
+
+  const onlySocial =
+    input.hasWebsite === false &&
+    (input.hasFacebook === true || input.hasInstagram === true);
+  if (onlySocial) push("MICRO", 12, "social-only online presence");
+
+  if ([...tech].some((t) => ENTERPRISE_TECH.has(t)))
+    push("LARGE", 10, "enterprise CMS detected");
+  if (tech.has("nextjs") || tech.has("react"))
+    push("MEDIUM", 8, "modern JS framework");
+  if (tech.has("shopify")) push("SMALL", 5, "Shopify store");
+  if (tech.has("wix") || tech.has("squarespace") || tech.has("webflow"))
+    push("SMALL", 8, "hosted site builder");
+  if (tech.has("wordpress")) push("SMALL", 6, "WordPress site");
+  if (tech.has("legacy-jquery") || tech.has("html-frames") || tech.has("flash"))
+    push("SMALL", 5, "legacy front-end stack");
+  if (score !== null && score >= 85 && (input.hasSeoBasics ?? false))
+    push("MEDIUM", 6, `polished website (health ${score})`);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Classify a lead into SME / MID_MARKET / LARGE based on publicly observable
- * signals. Each signal contributes points to one of the three buckets; the
- * winner is returned along with confidence and the contributing signals.
- *
- * Heuristic-only — no claim of LinkedIn-scraped truth. Pass
- * `linkedinEmployeeRange` if/when an enrichment provider supplies it.
+ * §11 — Classify a lead into one of five business-scale tiers based on
+ * publicly observable signals: reviews, headcount, locations, revenue,
+ * website technology, and category keywords.
  */
 export function classifyBusinessScale(
   input: BusinessScaleInput,
 ): BusinessScaleResult {
-  const buckets: Record<Exclude<BusinessScale, "UNKNOWN">, number> = {
-    SME: 0,
-    MID_MARKET: 0,
+  const buckets: BucketMap = {
+    MICRO: 0,
+    SMALL: 0,
+    MEDIUM: 0,
     LARGE: 0,
+    ENTERPRISE: 0,
   };
   const signals: BusinessScaleSignal[] = [];
-  const push = (
-    scale: Exclude<BusinessScale, "UNKNOWN">,
-    weight: number,
-    signal: string,
-  ) => {
-    buckets[scale] += weight;
-    signals.push({ scale, weight, signal });
-  };
 
   const hay = [
     input.name ?? "",
@@ -591,99 +792,27 @@ export function classifyBusinessScale(
     .join(" | ")
     .toLowerCase();
 
-  // 1. Name / category keywords.
-  if (LARGE_KEYWORDS.some((k) => hay.includes(k))) {
-    push("LARGE", 25, "name/category implies enterprise scale");
-  }
-  if (MID_KEYWORDS.some((k) => hay.includes(k))) {
-    push("MID_MARKET", 18, "category implies mid-market firm");
-  }
-  if (SME_KEYWORDS.some((k) => hay.includes(k))) {
-    push("SME", 18, "category implies small/independent business");
-  }
+  scoreFromKeywords(hay, buckets, signals);
+  scoreFromReviews(input.reviewCount ?? 0, buckets, signals);
 
-  // 2. Review count (popularity / footprint signal).
-  const reviews = input.reviewCount ?? 0;
-  if (reviews >= 5000)
-    push("LARGE", 20, `${reviews} reviews — household-name traffic`);
-  else if (reviews >= 1000)
-    push("LARGE", 12, `${reviews} reviews — major footprint`);
-  else if (reviews >= 300)
-    push("MID_MARKET", 14, `${reviews} reviews — established footprint`);
-  else if (reviews >= 50) push("MID_MARKET", 8, `${reviews} reviews`);
-  else if (reviews > 0) push("SME", 8, `only ${reviews} reviews`);
-  else push("SME", 5, "no review history");
+  // Prefer explicit employeeEstimate; fall back to linkedinEmployeeRange.
+  const headcount =
+    input.employeeEstimate ?? bandSize(input.linkedinEmployeeRange);
+  const rangeLabel =
+    input.employeeEstimate !== null && input.employeeEstimate !== undefined
+      ? String(input.employeeEstimate)
+      : (input.linkedinEmployeeRange ?? "");
+  scoreFromHeadcount(headcount, rangeLabel, buckets, signals);
 
-  // 3. LinkedIn employee range (if provided by an enrichment).
-  const headcount = bandSize(input.linkedinEmployeeRange);
-  if (headcount !== null) {
-    if (headcount >= 1000)
-      push("LARGE", 30, `LinkedIn band ${input.linkedinEmployeeRange}`);
-    else if (headcount >= 200)
-      push("MID_MARKET", 25, `LinkedIn band ${input.linkedinEmployeeRange}`);
-    else if (headcount >= 50)
-      push("MID_MARKET", 15, `LinkedIn band ${input.linkedinEmployeeRange}`);
-    else push("SME", 20, `LinkedIn band ${input.linkedinEmployeeRange}`);
-  }
+  scoreFromLocations(input.locationCount, buckets, signals);
+  scoreFromRevenue(input.revenueEstimate, buckets, signals);
+  scoreFromWebsite(input, buckets, signals);
 
-  // 4. Website tech & quality.
-  const tech = (input.technologies ?? []).map((t) => t.toLowerCase());
-  const score = input.websiteHealthScore ?? null;
-  const bytes = input.pageBytes ?? 0;
-
-  if (input.hasWebsite === false) {
-    push("SME", 20, "no website on file");
-  }
-
-  if (tech.includes("nextjs") || tech.includes("react")) {
-    push("MID_MARKET", 10, "modern JS framework (Next.js/React)");
-  }
-  if (
-    tech.includes("shopify") ||
-    tech.includes("wix") ||
-    tech.includes("squarespace") ||
-    tech.includes("webflow")
-  ) {
-    push("SME", 12, "hosted site builder (Shopify/Wix/Squarespace/Webflow)");
-  }
-  if (tech.includes("wordpress")) {
-    push("SME", 6, "WordPress site");
-  }
-  if (
-    tech.includes("legacy-jquery") ||
-    tech.includes("html-frames") ||
-    tech.includes("flash")
-  ) {
-    push("SME", 8, "legacy front-end stack");
-  }
-  if (
-    score !== null &&
-    score >= 85 &&
-    (input.hasSeoBasics ?? false) &&
-    (input.hasOgTags ?? false)
-  ) {
-    push("MID_MARKET", 8, `polished website (health ${score})`);
-  }
-  if (bytes >= 200_000) {
-    push("MID_MARKET", 6, `heavy homepage (${Math.round(bytes / 1024)} KB)`);
-  }
-  if (bytes >= 800_000) {
-    push("LARGE", 6, "enterprise-weight homepage");
-  }
-
-  // 5. Online presence — SMEs often live on Facebook/Instagram only.
-  const onlySocial =
-    input.hasWebsite === false && (input.hasFacebook || input.hasInstagram);
-  if (onlySocial) push("SME", 10, "social-only presence");
-
-  // Pick winner.
-  const ordered = (
-    Object.entries(buckets) as Array<
-      [Exclude<BusinessScale, "UNKNOWN">, number]
-    >
-  ).sort((a, b) => b[1] - a[1]);
+  const ordered = (Object.entries(buckets) as Array<[ScaleTier, number]>).sort(
+    (a, b) => b[1] - a[1],
+  );
   const [topScale, topScore] = ordered[0];
-  const [, second] = ordered[1] ?? ["SME", 0];
+  const [, second] = ordered[1] ?? (["MICRO", 0] as [ScaleTier, number]);
 
   if (topScore < 15) {
     return {
@@ -698,7 +827,7 @@ export function classifyBusinessScale(
     0,
     Math.min(100, Math.round((topScore - second) * 5 + 30)),
   );
-  const reasoning = signals
+  const topSignals = signals
     .filter((s) => s.scale === topScale)
     .slice(0, 3)
     .map((s) => s.signal)
@@ -709,7 +838,7 @@ export function classifyBusinessScale(
     confidence,
     signals,
     reasoning:
-      reasoning ||
+      topSignals ||
       `${BUSINESS_SCALE_LABELS[topScale]} based on combined signals.`,
   };
 }

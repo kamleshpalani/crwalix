@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
         rawPayload: body as never,
         receivedAt: now,
       },
-      select: { id: true },
+      select: { id: true, fromEmail: true },
     });
 
     await tx.outreachMessage.update({

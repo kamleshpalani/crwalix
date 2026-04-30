@@ -123,8 +123,10 @@ export const LeadFilterSchema = z.object({
     .optional(),
   businessScale: z
     .union([
-      z.enum(["SME", "MID_MARKET", "LARGE", "UNKNOWN"]),
-      z.array(z.enum(["SME", "MID_MARKET", "LARGE", "UNKNOWN"])),
+      z.enum(["MICRO", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE", "UNKNOWN"]),
+      z.array(
+        z.enum(["MICRO", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE", "UNKNOWN"]),
+      ),
     ])
     .optional(),
   city: z.string().optional(),

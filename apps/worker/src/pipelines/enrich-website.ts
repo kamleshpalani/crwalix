@@ -1497,6 +1497,12 @@ export async function runWebsiteEnrichment(job: EnrichmentJob): Promise<void> {
         // §8.1 — mobile viewport + contact form presence
         isMobileReady: result.signals.hasMobileViewport,
         hasContactForm: result.signals.hasContactForm,
+        // §9.2 — extended audit boolean signals
+        hasSeoBasics: result.signals.hasSeoBasics,
+        hasSchemaMarkup: result.signals.hasSchemaMarkup,
+        hasAnalytics: result.signals.hasAnalytics,
+        hasBookingForm: result.signals.hasBookingForm,
+        hasLeadCaptureForm: result.signals.hasLeadCaptureForm,
         // §9.1 — 7-state classification
         websiteClassification: result.websiteClassification,
       },
