@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
+import {
+  requireOrg,
+  isResponse,
+  isAuthError,
+  hasFinanceAccess,
+  requireRole,
+} from "@/lib/auth";
 import { invoiceService } from "@/server/services/invoice.service";
 
 const Line = z.object({
@@ -36,6 +42,8 @@ export async function POST(req: Request) {
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  const denied = requireRole(ctx, hasFinanceAccess);
+  if (denied) return denied;
 
   let body: unknown;
   try {

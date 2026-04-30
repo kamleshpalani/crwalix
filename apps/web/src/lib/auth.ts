@@ -13,7 +13,12 @@ export interface AuthContext {
 }
 
 export type AuthError = {
-  code: "UNAUTHORIZED" | "NO_ORG" | "USER_SUSPENDED" | "ORG_SUSPENDED";
+  code:
+    | "UNAUTHORIZED"
+    | "NO_ORG"
+    | "USER_SUSPENDED"
+    | "ORG_SUSPENDED"
+    | "MFA_REQUIRED";
 };
 
 export function isResponse(x: unknown): x is NextResponse {
@@ -22,6 +27,69 @@ export function isResponse(x: unknown): x is NextResponse {
 
 export function isAuthError(x: unknown): x is AuthError {
   return typeof x === "object" && x !== null && "code" in x;
+}
+
+// ---------------------------------------------------------------------------
+// Spec Section 4 — Granular role helpers
+// ---------------------------------------------------------------------------
+//
+// Role hierarchy (each role is a superset of those below it):
+//   OWNER > ADMIN > (SALES | PROJECT_MANAGER | FINANCE) > MEMBER
+//
+// "Elevated" roles are the Clerk-native "admin" / "org:admin" strings as well
+// as our DB-level OWNER and ADMIN values. The four named functional roles each
+// grant access to a specific feature area only. MEMBER has read-only access.
+
+/** Normalise a Clerk org role string or DB Role enum value to lower-case. */
+function norm(role: string) {
+  return role.toLowerCase();
+}
+
+const ELEVATED = new Set(["owner", "admin", "org:admin"]);
+
+/** OWNER or ADMIN — can do everything an org member can do. */
+export function isElevated(ctx: AuthContext): boolean {
+  return ctx.isSuperAdmin || ELEVATED.has(norm(ctx.role));
+}
+
+/** Spec 4.3 — Sales User: leads, outreach, CRM, proposals, quotes. */
+export function hasSalesAccess(ctx: AuthContext): boolean {
+  return isElevated(ctx) || norm(ctx.role) === "sales";
+}
+
+/** Spec 4.4 — Project Manager: projects, tasks, milestones, files, portal. */
+export function hasProjectAccess(ctx: AuthContext): boolean {
+  return isElevated(ctx) || norm(ctx.role) === "project_manager";
+}
+
+/** Spec 4.5 — Finance User: invoices, billing history, exports. */
+export function hasFinanceAccess(ctx: AuthContext): boolean {
+  return isElevated(ctx) || norm(ctx.role) === "finance";
+}
+
+/** Return a 403 NextResponse if the predicate is false. */
+export function requireRole(
+  ctx: AuthContext,
+  check: (c: AuthContext) => boolean,
+): NextResponse | null {
+  return check(ctx)
+    ? null
+    : NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+}
+
+/**
+ * Spec 6.1 — checks whether the Clerk session JWT contains a verified second
+ * factor. Clerk stores this in the `fva` (factor verification array) claim:
+ *   fva[0] = seconds since first-factor verification
+ *   fva[1] = seconds since second-factor verification (-1 if never verified)
+ */
+function hasCompletedMfa(
+  sessionClaims: Record<string, unknown> | null | undefined,
+): boolean {
+  const fva = sessionClaims?.fva;
+  const secondFactorAge =
+    Array.isArray(fva) && fva.length >= 2 ? (fva[1] as number) : -1;
+  return secondFactorAge !== -1;
 }
 
 /**
@@ -38,7 +106,7 @@ export function isAuthError(x: unknown): x is AuthError {
 export async function requireOrg(): Promise<
   AuthContext | NextResponse | AuthError
 > {
-  const { userId, orgId: clerkOrgIdFromJwt, orgRole } = auth();
+  const { userId, orgId: clerkOrgIdFromJwt, orgRole, sessionClaims } = auth();
   if (!userId) {
     return NextResponse.json(
       { error: { code: "UNAUTHORIZED", message: "Sign in required" } },
@@ -117,6 +185,15 @@ export async function requireOrg(): Promise<
   // Section 6.2 — block suspended/deleted/pending orgs.
   if (org.status !== "ACTIVE") {
     return { code: "ORG_SUSPENDED" } satisfies AuthError;
+  }
+
+  // Spec 6.1 — per-org MFA enforcement.
+  // When requireMfa = true, the Clerk session must have a verified second factor.
+  // Clerk encodes MFA status in the JWT claim `fva` (factor verification array):
+  //   fva[0] = time since first factor verified (seconds), fva[1] = time since second factor.
+  // A value of -1 means the factor type was never verified in this session.
+  if (org.requireMfa && !hasCompletedMfa(sessionClaims)) {
+    return { code: "MFA_REQUIRED" } satisfies AuthError;
   }
 
   // Best-effort lastLoginAt (debounced ~1h to avoid hot-path writes).

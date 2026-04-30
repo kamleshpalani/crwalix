@@ -20,6 +20,12 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  /// Full sales access: leads, outreach, CRM, proposals, quotes.
+  SALES
+  /// Project delivery: projects, tasks, milestones, files, portal invites.
+  PROJECT_MANAGER
+  /// Finance access: invoices, billing history, export.
+  FINANCE
   MEMBER
 }
 
@@ -169,6 +175,9 @@ model Organization {
   /// Soft caps enforced by the usage layer; null = unlimited.
   aiUsageLimit     Int?
   leadSearchLimit  Int?
+  /// When true, all org members must complete a second factor (MFA/2FA)
+  /// before accessing tenant-scoped resources (Spec 6.1).
+  requireMfa       Boolean  @default(false)
   stripeCustomerId String?  @unique
   /// Optional outbound webhook fired when newly-discovered leads arrive
   /// from a scheduled search. Slack-compatible incoming webhooks work too.
