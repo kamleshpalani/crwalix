@@ -414,7 +414,18 @@ export function getServicePitch(input: ServicePitchInput): ServicePitch[] {
 }
 
 /**
- * Business-scale classification. Drives sales-team segmentation: SMEs get
+ * §11 — Business-scale classification. 5-tier model drives sales-team
+ * segmentation and scoring adjustments.
+ * WHEN TO USE EACH TIER:
+ *   MICRO      — sole trader / owner-operated, ≤ 5 staff, local only
+ *   SMALL      — independent SME, 6–50 staff, maybe a few locations
+ *   MEDIUM     — regional chain / multi-department, 51–250 staff
+ *   LARGE      — national or multi-national, 251–999 staff
+ *   ENTERPRISE — public company / franchise group, 1000+ staff
+ *   UNKNOWN    — insufficient signals to classify
+ *
+ * Previously this was a 3-tier SME/MID_MARKET/LARGE enum.
+ * Business-scale classification. Drives sales-team segmentation: MICRO/SMALL get
  * lightweight website packages, mid-market get redesign + integrations,
  * large enterprises get bespoke proposals.
  */
