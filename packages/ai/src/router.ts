@@ -104,7 +104,7 @@ export async function aiComplete(
   // Phase 2.8: enforce per-org AI budget before any LLM call.
   const budget = await checkAiBudget(req.organizationId);
   if (!budget.allowed) {
-    throw new AiProviderError(budget.reason ?? "AI budget exceeded");
+    throw new Error(budget.reason ?? "AI budget exceeded");
   }
 
   const target = resolveTarget(req);
