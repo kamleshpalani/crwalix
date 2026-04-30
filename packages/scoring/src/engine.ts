@@ -1,5 +1,10 @@
-import { PriorityTier } from '@crawlix/shared';
-import type { Ruleset, ScorableLead, ScoreContribution, ScoreResult } from './types';
+import { PriorityTier } from "@crawlix/shared";
+import type {
+  Ruleset,
+  ScorableLead,
+  ScoreContribution,
+  ScoreResult,
+} from "./types";
 
 export function score(lead: ScorableLead, ruleset: Ruleset): ScoreResult {
   const breakdown: ScoreContribution[] = [];
@@ -19,12 +24,25 @@ export function score(lead: ScorableLead, ruleset: Ruleset): ScoreResult {
   }
 
   const clamped = Math.max(0, Math.min(100, Math.round(total)));
-  const tier: PriorityTier =
-    clamped >= ruleset.tiers.high
-      ? PriorityTier.HIGH
-      : clamped >= ruleset.tiers.medium
-      ? PriorityTier.MEDIUM
-      : PriorityTier.LOW;
 
-  return { score: clamped, priorityTier: tier, breakdown, rulesetVersion: ruleset.version };
+  // §10.1 — 5-tier classification
+  let tier: PriorityTier;
+  if (clamped >= ruleset.tiers.critical) {
+    tier = PriorityTier.CRITICAL;
+  } else if (clamped >= ruleset.tiers.high) {
+    tier = PriorityTier.HIGH;
+  } else if (clamped >= ruleset.tiers.medium) {
+    tier = PriorityTier.MEDIUM;
+  } else if (clamped >= ruleset.tiers.low) {
+    tier = PriorityTier.LOW;
+  } else {
+    tier = PriorityTier.NOT_RECOMMENDED;
+  }
+
+  return {
+    score: clamped,
+    priorityTier: tier,
+    breakdown,
+    rulesetVersion: ruleset.version,
+  };
 }

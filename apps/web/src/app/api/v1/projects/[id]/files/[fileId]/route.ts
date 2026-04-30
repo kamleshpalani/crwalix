@@ -4,7 +4,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
+import {
+  requireOrg,
+  isResponse,
+  isAuthError,
+  hasProjectAccess,
+  requireRole,
+} from "@/lib/auth";
 import { fileService } from "@/server/services/file.service";
 
 export async function GET(
@@ -30,6 +36,8 @@ export async function DELETE(
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  const denied = requireRole(ctx, hasProjectAccess);
+  if (denied) return denied;
 
   const ok = await fileService.remove(ctx.orgId, params.fileId);
   if (!ok)

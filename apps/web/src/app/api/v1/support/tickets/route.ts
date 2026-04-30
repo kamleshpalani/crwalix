@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
 import { supportService } from "@/server/services/support.service";
+import { publishDomainEvent } from "@/server/lib/domain-events";
 
 const Body = z.object({
   subject: z.string().min(1).max(200),
@@ -49,5 +50,14 @@ export async function POST(req: Request) {
     channel: parsed.data.channel,
     initialMessage: parsed.data.initialMessage,
   });
+
+  // §6 domain event — TicketOpened.
+  void publishDomainEvent({
+    eventName: "TicketOpened",
+    organizationId: ctx.orgId,
+    occurredAt: new Date().toISOString(),
+    payload: { ticketId: ticket.id, subject: ticket.subject },
+  });
+
   return NextResponse.json({ ticket });
 }

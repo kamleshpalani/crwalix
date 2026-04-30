@@ -84,9 +84,11 @@ enum WebsiteStatus {
 }
 
 enum PriorityTier {
+  CRITICAL
   HIGH
   MEDIUM
   LOW
+  NOT_RECOMMENDED
 }
 
 enum EnrichmentKind {
@@ -96,6 +98,10 @@ enum EnrichmentKind {
   SOCIAL
   COMPANY
   CONTACT
+  /// §8.1 — AI-generated business description from lead signals.
+  BUSINESS_DESCRIPTION
+  /// §8.1 — AI-generated review summary from rating + review count.
+  REVIEW_SUMMARY
 }
 
 enum EnrichmentStatus {
@@ -104,6 +110,8 @@ enum EnrichmentStatus {
   SUCCEEDED
   FAILED
   SKIPPED
+  /// §8.2 — Some enrichment steps succeeded, others failed/skipped.
+  PARTIAL
 }
 
 enum JobStatus {
@@ -513,6 +521,28 @@ model Lead {
   firstSeenAt       DateTime       @default(now())
   lastSeenAt        DateTime       @default(now())
   lastEnrichedAt    DateTime?
+  /// §8.1 — AI-generated business description derived from public signals.
+  businessDescription String?
+  /// §8.1 — AI-generated summary of business reviews (from rating + count).
+  reviewSummary     String?
+  /// §8.1 — Technology stack detected via website audit (BuiltWith + heuristics).
+  techStack         String[]       @default([])
+  /// §8.1 — Page <title> text extracted during website enrichment.
+  seoTitle          String?
+  /// §8.1 — Meta description extracted during website enrichment.
+  seoDescription    String?
+  /// §8.1 — Whether the website has a mobile viewport meta tag.
+  isMobileReady     Boolean?
+  /// §8.1 — Whether a contact form / mailto link was found on the website.
+  hasContactForm    Boolean?
+  /// §8.2 — Aggregate enrichment lifecycle status.
+  /// One of: NOT_STARTED | IN_PROGRESS | COMPLETED | FAILED | PARTIALLY_COMPLETED
+  enrichmentStatus  String         @default("NOT_STARTED")
+  /// §9.1 — 7-state website classification derived from the website audit.
+  /// One of: NO_WEBSITE | WEBSITE_FOUND | NOT_LOADING | OUTDATED | MODERN | NEEDS_REDESIGN | TECHNICAL_ISSUES
+  websiteClassification String     @default("NO_WEBSITE")
+  /// §9.3 — AI-generated full website audit report (JSON).
+  websiteAiReport   Json?
   rawPayload        Json
   normalizedPayload Json
   createdAt         DateTime       @default(now())
@@ -535,6 +565,8 @@ model Lead {
   @@index([organizationId, crmStage])
   @@index([organizationId, googlePlaceId])
   @@index([organizationId, yelpBusinessId])
+  @@index([organizationId, enrichmentStatus])
+  @@index([organizationId, websiteClassification])
 }
 
 /// Per-field change log for a Lead.  One row per changed field per update.
@@ -1639,6 +1671,60 @@ enum IntegrationStatus {
   CONNECTED
   DISCONNECTED
   ERROR
+}
+
+// =============================================================================
+// Usage metering — Phase 2.7
+// One row per billable event. Aggregated nightly for Stripe metered billing.
+// FK + RLS in 0034_usage_events.sql.
+// =============================================================================
+
+/// Metered usage event. kind examples: ai.tokens | email.sent | lead.enriched | lead.discovered
+model UsageEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Stable camelCase kind e.g. "ai.tokens", "email.sent", "lead.enriched".
+  kind           String
+  /// Arbitrary quantity (tokens, count, bytes — depends on kind).
+  quantity       Int      @default(1)
+  /// USD micro-cents cost captured at emit time (0 if not billable).
+  costMicroCents Int      @default(0)
+  /// Optional FK to the entity that triggered the event.
+  refId          String?
+  /// Free metadata (model name, provider, etc.)
+  meta           Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, kind, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// =============================================================================
+// Consent records — Phase 5.2 (GDPR/CCPA)
+// Append-only log of ToS/Privacy/Marketing acceptance per user+org pair.
+// FK + RLS in 0035_consent_records.sql.
+// =============================================================================
+
+/// Append-only consent acceptance record. Never updated — only inserted.
+model ConsentRecord {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// Clerk user ID of the accepting user.
+  userId         String
+  /// Policy kind: tos | privacy | marketing | data_processing
+  kind           String
+  /// Version of the policy document e.g. "2026-01-01".
+  policyVersion  String
+  /// True = accepted, false = revoked (e.g. marketing opt-out).
+  accepted       Boolean  @default(true)
+  /// Captured IP address.
+  ip             String?
+  /// Captured User-Agent header.
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, userId, kind, createdAt])
+  @@index([organizationId, userId])
 }
 
 /// Module #21 — third-party integration connections per organization.

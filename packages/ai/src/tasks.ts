@@ -1,5 +1,5 @@
 import { aiComplete } from "./router";
-import type { AiCompleteResult } from "./types";
+import type { AiCompleteResult, AiUsage } from "./types";
 
 export interface ProposalLeadInput {
   name: string;
@@ -762,7 +762,7 @@ export async function answerSupportQuestion(
 }
 
 /* -------------------------------------------------------------------------- */
-/* AI Lead Scoring                                                              */
+/* §10 AI Lead Scoring + Recommendations                                       */
 /* -------------------------------------------------------------------------- */
 
 export interface AiScoreLeadInput {
@@ -774,6 +774,8 @@ export interface AiScoreLeadInput {
     country?: string | null;
     website?: string | null;
     websiteStatus?: string | null;
+    /** §9.1 — 7-state website classification from audit. */
+    websiteClassification?: string | null;
     phone?: string | null;
     email?: string | null;
     rating?: number | null;
@@ -781,43 +783,94 @@ export interface AiScoreLeadInput {
     score?: number | null;
     tags?: string[] | null;
     intelSummary?: string | null;
+    /** §8.1 — Business scale. */
+    businessScale?: string | null;
+    /** §10.2 — Audit signals for deeper scoring context. */
+    hasBookingForm?: boolean | null;
+    hasLeadCaptureForm?: boolean | null;
+    hasSeoBasics?: boolean | null;
+    hasSchemaMarkup?: boolean | null;
+    hasAnalytics?: boolean | null;
+    hasMobileViewport?: boolean | null;
+    websiteHealthScore?: number | null;
   };
 }
 
 export interface AiScoreLeadResult {
-  /** AI-assigned 0-100 score. */
+  /** §10.1 — AI-assigned 0-100 score. */
   score: number;
-  /** One of: CRITICAL | HIGH | MEDIUM | LOW */
-  tier: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  /** §10.1 — One of: CRITICAL | HIGH | MEDIUM | LOW | NOT_RECOMMENDED */
+  tier: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NOT_RECOMMENDED";
   /** Short reasoning paragraph (1-3 sentences). */
   reasoning: string;
+  /** §10.3 — Whether to contact this lead (true = yes). */
+  contactRecommended: boolean;
+  /** §10.3 — Best service to pitch (e.g. "Website Redesign + SEO"). */
+  bestServicePitch: string;
+  /** §10.3 — Best outreach angle (1-2 sentences addressing their specific pain). */
+  outreachAngle: string;
+  /** §10.3 — Suggested service package name. */
+  suggestedPackage: string;
+  /** §10.3 — Estimated deal size range (e.g. "$2,000–$5,000"). */
+  estimatedDealSize: string;
+  /** §10.3 — Probability of conversion 0-100. */
+  conversionProbability: number;
+  /** §10.3 — Suggested immediate next action. */
+  suggestedNextAction: string;
   usage: AiCompleteResult["usage"];
   provider: AiCompleteResult["provider"];
   model: AiCompleteResult["model"];
 }
 
-const AI_SCORE_SYSTEM = `You are an expert B2B lead qualification analyst. Given a business lead's data, produce a qualification score and tier.
+const AI_SCORE_SYSTEM = `You are an expert B2B lead qualification analyst for a web design and digital marketing agency.
+Given a business lead's data, produce a qualification score, tier, and full §10 sales recommendation.
 
 Respond ONLY with a valid JSON object (no markdown, no prose):
 {
   "score": <integer 0-100>,
-  "tier": "<CRITICAL|HIGH|MEDIUM|LOW>",
-  "reasoning": "<1-3 sentence explanation>"
+  "tier": "<CRITICAL|HIGH|MEDIUM|LOW|NOT_RECOMMENDED>",
+  "reasoning": "<1-3 sentence explanation>",
+  "contactRecommended": <true|false>,
+  "bestServicePitch": "<concise service name, e.g. 'Website Redesign + SEO'>",
+  "outreachAngle": "<1-2 sentences addressing their specific business pain>",
+  "suggestedPackage": "<package tier name, e.g. 'Starter Website + Local SEO'>",
+  "estimatedDealSize": "<range, e.g. '$2,000–$4,000'>",
+  "conversionProbability": <integer 0-100>,
+  "suggestedNextAction": "<concrete next step for the sales rep>"
 }
 
-Scoring guidance:
-- 80-100 (CRITICAL): Multiple contact methods, strong online presence, high category value, positive signals
-- 60-79 (HIGH): Good contact data, decent web presence, clear category fit  
-- 40-59 (MEDIUM): Partial contact data, limited online presence or unclear fit
-- 0-39 (LOW): Missing contacts, no website, very low rating or unknown category
+§10.1 Scoring tiers:
+- 80-100 (CRITICAL): Contact immediately — no/broken website, high category value, multiple contact methods
+- 60-79 (HIGH): Follow up this week — good fit, some digital weakness to exploit
+- 40-59 (MEDIUM): Nurture sequence — partial fit, lower urgency
+- 20-39 (LOW): Low priority — already has decent online presence or weak signals
+- 0-19 (NOT_RECOMMENDED): Do not contact — modern site, chain/franchise, permanently closed
 
-Factors (in rough weight order):
-1. Contact completeness: phone + email > phone or email > neither
-2. Website status: healthy > exists but issues > no website
-3. Rating and review count: high rating with many reviews is very positive
-4. Category value: e.g. law firms, dentists, architects score higher than vague categories
-5. Intel summary: positive signals from crawled website boost score
-6. Location data: having city/country adds trustworthiness`;
+§10.2 Key factors:
+1. No website or broken/parked website → strongest signal (+++)
+2. Outdated / mobile-unfriendly website → strong signal (++)
+3. Poor website performance (low health score) → good signal (+)
+4. High business rating (4.0+) with 25+ reviews → social proof, ability to pay (+)
+5. Phone + email available → ideal dual-channel outreach (+)
+6. High-demand industry (dental, legal, spa, fitness, restaurant, etc.) → higher budget (+)
+7. Known city + country → enables geo-personalisation (+)
+8. Micro / small independent → ideal package size (+)
+9. Active on Facebook / Instagram → digitally aware but under-served (+)
+10. Weak SEO (missing title/meta/h1/schema) → SEO upsell opportunity (+)
+11. No booking system (for service businesses) → booking integration pitch (+)
+12. No e-commerce (for retail) → online store opportunity (+)
+13. No lead capture form → conversion optimisation upsell (+)
+14. High review count + high-value category → estimated strong ability to pay (+)
+15. No analytics detected → basic digital literacy gap, extra upsell (+)
+
+§10.3 Recommendation rules:
+- contactRecommended: true if score >= 40
+- bestServicePitch: match the single biggest gap (new website > redesign > SEO > booking > e-commerce > lead form)
+- outreachAngle: must mention the business name and a specific weakness
+- suggestedPackage: use tier-based naming (Starter/Growth/Premium/Enterprise)
+- estimatedDealSize: based on category + scale (micro=$1k-3k, small=$2k-5k, medium=$4k-10k)
+- conversionProbability: higher for CRITICAL leads with contact data (40-60% typical range)
+- suggestedNextAction: one of "Call today", "Send cold email", "LinkedIn connect", "Add to nurture sequence", "Do not contact"`;
 
 function getContactStatus(
   phone?: string | null,
@@ -839,13 +892,35 @@ function getRatingLine(
   return `Rating: ${rating.toFixed(1)}${suffix}`;
 }
 
+function buildAuditSignalLines(input: AiScoreLeadInput["lead"]): string[] {
+  const lines: (string | null)[] = [
+    input.websiteClassification
+      ? `Website classification: ${input.websiteClassification}`
+      : null,
+    typeof input.websiteHealthScore === "number"
+      ? `Website health score: ${input.websiteHealthScore}/100`
+      : null,
+    input.hasMobileViewport === false ? "Mobile viewport: missing" : null,
+    input.hasSeoBasics === false ? "SEO basics: missing" : null,
+    input.hasSchemaMarkup === false ? "Schema markup: missing" : null,
+    input.hasAnalytics === false ? "Analytics: not detected" : null,
+    input.hasBookingForm === false ? "Online booking: none" : null,
+    input.hasLeadCaptureForm === false ? "Lead capture form: none" : null,
+  ];
+  return lines.filter((l): l is string => l !== null);
+}
+
 function buildLeadScorePrompt(input: AiScoreLeadInput["lead"]): string {
+  const auditLines = buildAuditSignalLines(input);
+  const auditSection = auditLines.map((l) => `  - ${l}`).join("\n");
+
   const lines = [
     `Business name: ${input.name}`,
     input.category ? `Category: ${input.category}` : null,
     (input.city ?? input.country)
       ? `Location: ${[input.city, input.country].filter(Boolean).join(", ")}`
       : "Location: unknown",
+    input.businessScale ? `Business scale: ${input.businessScale}` : null,
     input.website ? `Website: ${input.website}` : "Website: none",
     input.websiteStatus ? `Website status: ${input.websiteStatus}` : null,
     `Contacts: ${getContactStatus(input.phone, input.email)}`,
@@ -855,10 +930,11 @@ function buildLeadScorePrompt(input: AiScoreLeadInput["lead"]): string {
       : null,
     input.tags?.length ? `Tags: ${input.tags.join(", ")}` : null,
     input.intelSummary ? `Intel summary:\n${input.intelSummary}` : null,
+    auditLines.length > 0 ? `\nAudit signals:\n${auditSection}` : null,
   ]
     .filter(Boolean)
     .join("\n");
-  return `Evaluate this lead:\n\n${lines}`;
+  return `Qualify this lead and provide a full sales recommendation:\n\n${lines}`;
 }
 
 function clampLeadScore(n: unknown): number {
@@ -874,14 +950,81 @@ function clampLeadScore(n: unknown): number {
   return Math.max(0, Math.min(100, Math.round(v)));
 }
 
-function scoreToTier(score: number): AiScoreLeadResult["tier"] {
-  if (score >= 80) return "CRITICAL";
-  if (score >= 60) return "HIGH";
-  if (score >= 40) return "MEDIUM";
-  return "LOW";
+function scoreToTier(s: number): AiScoreLeadResult["tier"] {
+  if (s >= 80) return "CRITICAL";
+  if (s >= 60) return "HIGH";
+  if (s >= 40) return "MEDIUM";
+  if (s >= 20) return "LOW";
+  return "NOT_RECOMMENDED";
 }
 
-const VALID_TIERS = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+const VALID_TIERS = new Set<string>([
+  "CRITICAL",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "NOT_RECOMMENDED",
+]);
+
+function parseAiScoreFields(
+  parsed: Record<string, unknown>,
+  score: number,
+  leadName: string,
+): Omit<AiScoreLeadResult, "score" | "tier" | "usage" | "provider" | "model"> {
+  const reasoning =
+    typeof parsed.reasoning === "string" && parsed.reasoning.trim().length > 0
+      ? parsed.reasoning.trim()
+      : "Score derived from available lead data.";
+
+  const contactRecommended =
+    typeof parsed.contactRecommended === "boolean"
+      ? parsed.contactRecommended
+      : score >= 40;
+
+  const bestServicePitch =
+    typeof parsed.bestServicePitch === "string" &&
+    parsed.bestServicePitch.trim()
+      ? parsed.bestServicePitch.trim()
+      : "Website Review";
+
+  const outreachAngle =
+    typeof parsed.outreachAngle === "string" && parsed.outreachAngle.trim()
+      ? parsed.outreachAngle.trim()
+      : `We noticed ${leadName} may benefit from digital improvements.`;
+
+  const suggestedPackage =
+    typeof parsed.suggestedPackage === "string" &&
+    parsed.suggestedPackage.trim()
+      ? parsed.suggestedPackage.trim()
+      : "Starter Package";
+
+  const estimatedDealSize =
+    typeof parsed.estimatedDealSize === "string" &&
+    parsed.estimatedDealSize.trim()
+      ? parsed.estimatedDealSize.trim()
+      : "Contact for quote";
+
+  const conversionProbability = clampLeadScore(parsed.conversionProbability);
+  const defaultNextAction = contactRecommended
+    ? "Send cold email"
+    : "Do not contact";
+  const suggestedNextAction =
+    typeof parsed.suggestedNextAction === "string" &&
+    parsed.suggestedNextAction.trim()
+      ? parsed.suggestedNextAction.trim()
+      : defaultNextAction;
+
+  return {
+    reasoning,
+    contactRecommended,
+    bestServicePitch,
+    outreachAngle,
+    suggestedPackage,
+    estimatedDealSize,
+    conversionProbability,
+    suggestedNextAction,
+  };
+}
 
 export async function scoreLeadWithAi(
   args: AiScoreLeadInput,
@@ -890,7 +1033,7 @@ export async function scoreLeadWithAi(
     taskKind: "lead.score",
     organizationId: args.organizationId,
     temperature: 0.1,
-    maxTokens: 300,
+    maxTokens: 500,
     jsonMode: true,
     messages: [
       { role: "system", content: AI_SCORE_SYSTEM },
@@ -898,13 +1041,16 @@ export async function scoreLeadWithAi(
     ],
   });
 
-  let parsed: { score?: unknown; tier?: unknown; reasoning?: unknown } = {};
+  let parsed: Record<string, unknown> = {};
   try {
     const text = result.text.trim();
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
     if (start !== -1 && end !== -1) {
-      parsed = JSON.parse(text.slice(start, end + 1)) as typeof parsed;
+      parsed = JSON.parse(text.slice(start, end + 1)) as Record<
+        string,
+        unknown
+      >;
     }
   } catch {
     // fallback to defaults below
@@ -915,15 +1061,224 @@ export async function scoreLeadWithAi(
     typeof parsed.tier === "string" && VALID_TIERS.has(parsed.tier)
       ? (parsed.tier as AiScoreLeadResult["tier"])
       : scoreToTier(score);
-  const reasoning =
-    typeof parsed.reasoning === "string" && parsed.reasoning.trim().length > 0
-      ? parsed.reasoning.trim()
-      : "Score derived from available lead data.";
+
+  const fields = parseAiScoreFields(parsed, score, args.lead.name);
 
   return {
     score,
     tier,
-    reasoning,
+    ...fields,
+    usage: result.usage,
+    provider: result.provider,
+    model: result.model,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// §9.3 — Website Audit AI Report
+// ---------------------------------------------------------------------------
+
+/** Structured scores + recommendations generated for a website audit. */
+export interface WebsiteAiReport {
+  /** 0–100 overall impression. */
+  overallScore: number;
+  /** UI/UX quality impression 0–100. */
+  uiUxScore: number;
+  /** SEO fundamentals score 0–100. */
+  seoScore: number;
+  /** Page performance score 0–100. */
+  performanceScore: number;
+  /** Mobile-friendliness score 0–100. */
+  mobileScore: number;
+  /** Trust signals score 0–100 (HTTPS, reviews, badges). */
+  trustScore: number;
+  /** Content quality / completeness score 0–100. */
+  contentScore: number;
+  /** Top 3–5 problems, ranked by business impact. */
+  mainProblems: string[];
+  /** One paragraph: how these problems affect the business's bottom line. */
+  businessImpact: string;
+  /** Prioritised improvement list (most impactful first). */
+  recommendedImprovements: string[];
+  /** Agency service package name that best fits the lead's needs. */
+  suggestedPackage: string;
+  /** Ballpark project value range, e.g. "$3,000–$5,000". */
+  estimatedProjectValue: string;
+  /** 2–3 sentence personalised outreach message to the business owner. */
+  outreachMessage: string;
+}
+
+export interface AiWebsiteAuditInput {
+  organizationId: string;
+  lead: {
+    name: string;
+    category?: string | null;
+    city?: string | null;
+    country?: string | null;
+    website?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+  };
+  auditIssues: string[];
+  auditCategories: Record<
+    string,
+    { status: "pass" | "warn" | "fail"; findings: string[] }
+  >;
+  healthScore: number;
+  websiteClassification: string;
+}
+
+const AI_WEBSITE_AUDIT_SYSTEM = `You are a web design agency consultant who evaluates small-business websites.
+Given technical audit signals about a website, produce a concise, client-friendly JSON analysis.
+
+Return ONLY valid JSON with these exact keys:
+{
+  "overallScore": <integer 0-100>,
+  "uiUxScore": <integer 0-100>,
+  "seoScore": <integer 0-100>,
+  "performanceScore": <integer 0-100>,
+  "mobileScore": <integer 0-100>,
+  "trustScore": <integer 0-100>,
+  "contentScore": <integer 0-100>,
+  "mainProblems": [<string>, ...],
+  "businessImpact": "<string>",
+  "recommendedImprovements": [<string>, ...],
+  "suggestedPackage": "<string>",
+  "estimatedProjectValue": "<string>",
+  "outreachMessage": "<string>"
+}
+
+Guidelines:
+- overallScore = weighted average of sub-scores
+- mainProblems: top 3-5 issues, short phrases (under 10 words each)
+- businessImpact: 2-3 sentences; focus on lost revenue / customers
+- recommendedImprovements: 4-6 items, most impactful first
+- suggestedPackage: e.g. "Website Redesign + SEO", "Mobile Optimisation + Speed", "Local SEO + Google Maps"
+- estimatedProjectValue: realistic range like "$2,500–$4,500"
+- outreachMessage: personalised, empathetic, avoid being pushy; mention the business name`;
+
+function getRatingLineFull(
+  rating?: number | null,
+  reviewCount?: number | null,
+): string | null {
+  if (rating == null) return null;
+  const suffix = reviewCount == null ? "" : ` (${reviewCount} reviews)`;
+  return `Rating: ${rating.toFixed(1)}${suffix}`;
+}
+
+function buildWebsiteAuditPrompt(input: AiWebsiteAuditInput): string {
+  const {
+    lead,
+    auditIssues,
+    auditCategories,
+    healthScore,
+    websiteClassification,
+  } = input;
+
+  const categoryLines = Object.entries(auditCategories)
+    .map(([name, cat]) => {
+      const findingStr =
+        cat.findings.length > 0 ? ` → ${cat.findings.join("; ")}` : "";
+      return `  ${name}: ${cat.status}${findingStr}`;
+    })
+    .join("\n");
+
+  const issueList =
+    auditIssues.length > 0
+      ? auditIssues.slice(0, 12).join("\n  - ")
+      : "none detected";
+
+  const lines = [
+    `Business name: ${lead.name}`,
+    lead.category ? `Category: ${lead.category}` : null,
+    (lead.city ?? lead.country)
+      ? `Location: ${[lead.city, lead.country].filter(Boolean).join(", ")}`
+      : null,
+    lead.website ? `Website: ${lead.website}` : "Website: unknown",
+    `Overall health score: ${healthScore}/100`,
+    `Classification: ${websiteClassification}`,
+    getRatingLineFull(lead.rating, lead.reviewCount),
+    `\nAudit categories:\n${categoryLines}`,
+    `\nDetected issues:\n  - ${issueList}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `Analyse this small business website and provide improvement recommendations:\n\n${lines}`;
+}
+
+function clampAuditScore(n: unknown): number {
+  const v = typeof n === "number" ? n : Number.parseFloat(String(n));
+  if (Number.isNaN(v)) return 50;
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+export async function auditWebsiteWithAi(args: AiWebsiteAuditInput): Promise<{
+  report: WebsiteAiReport;
+  usage: AiUsage;
+  provider: string;
+  model: string;
+}> {
+  const result = await aiComplete({
+    taskKind: "website.audit",
+    organizationId: args.organizationId,
+    temperature: 0.2,
+    maxTokens: 800,
+    jsonMode: true,
+    messages: [
+      { role: "system", content: AI_WEBSITE_AUDIT_SYSTEM },
+      { role: "user", content: buildWebsiteAuditPrompt(args) },
+    ],
+  });
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const text = result.text.trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end !== -1) {
+      parsed = JSON.parse(text.slice(start, end + 1)) as Record<
+        string,
+        unknown
+      >;
+    }
+  } catch {
+    // fallback to defaults below
+  }
+
+  const toStrArr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+  const report: WebsiteAiReport = {
+    overallScore: clampAuditScore(parsed.overallScore),
+    uiUxScore: clampAuditScore(parsed.uiUxScore),
+    seoScore: clampAuditScore(parsed.seoScore),
+    performanceScore: clampAuditScore(parsed.performanceScore),
+    mobileScore: clampAuditScore(parsed.mobileScore),
+    trustScore: clampAuditScore(parsed.trustScore),
+    contentScore: clampAuditScore(parsed.contentScore),
+    mainProblems: toStrArr(parsed.mainProblems),
+    businessImpact:
+      typeof parsed.businessImpact === "string"
+        ? parsed.businessImpact.trim()
+        : "No business impact analysis available.",
+    recommendedImprovements: toStrArr(parsed.recommendedImprovements),
+    suggestedPackage:
+      typeof parsed.suggestedPackage === "string"
+        ? parsed.suggestedPackage.trim()
+        : "Website Review",
+    estimatedProjectValue:
+      typeof parsed.estimatedProjectValue === "string"
+        ? parsed.estimatedProjectValue.trim()
+        : "Contact for quote",
+    outreachMessage:
+      typeof parsed.outreachMessage === "string"
+        ? parsed.outreachMessage.trim()
+        : `We noticed ${args.lead.name}'s website has room for improvement. We'd love to help you attract more customers online.`,
+  };
+
+  return {
+    report,
     usage: result.usage,
     provider: result.provider,
     model: result.model,

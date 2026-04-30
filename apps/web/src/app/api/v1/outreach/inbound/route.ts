@@ -24,6 +24,7 @@ import { prisma, withOrg } from "@crawlix/db";
 import { JobName, QueueName } from "@crawlix/shared";
 import { enqueue } from "@/lib/queue";
 import { emitNotification } from "@/server/lib/notify";
+import { publishDomainEvent } from "@/server/lib/domain-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -261,6 +262,19 @@ export async function POST(req: NextRequest) {
     },
     { jobId: `outreach-classify:${inbound.id}` },
   ).catch(() => {});
+
+  // §6 domain event — MessageReceived.
+  void publishDomainEvent({
+    eventName: "MessageReceived",
+    organizationId: orgId,
+    occurredAt: new Date().toISOString(),
+    payload: {
+      inboundMessageId: inbound.id,
+      fromEmail: inbound.fromEmail,
+      leadId: matched.leadId ?? undefined,
+      dealId: matched.dealId ?? undefined,
+    },
+  });
 
   return NextResponse.json(
     { ok: true, matched: true, inboundMessageId: inbound.id },

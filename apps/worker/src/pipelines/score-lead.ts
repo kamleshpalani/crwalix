@@ -7,9 +7,12 @@ import {
   type ScoreLeadJob,
 } from "@crawlix/shared";
 import { logger } from "../lib/logger";
+import { publishDomainEvent } from "../lib/domain-events";
 
 export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
   const log = logger.child({ job: "score.lead", leadId: job.leadId });
+
+  let scoredResult: { score: number; priorityTier: string } | null = null;
 
   await withOrg(job.organizationId, async (tx) => {
     const lead = await tx.lead.findUnique({ where: { id: job.leadId } });
@@ -32,6 +35,28 @@ export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
       categories: lead.categories,
       phone: lead.phone,
       website: lead.website,
+      // §10.2 — new fields for extended scoring rules
+      email: (lead as { email?: string | null }).email ?? null,
+      facebookUrl:
+        (lead as { facebookUrl?: string | null }).facebookUrl ?? null,
+      instagramUrl:
+        (lead as { instagramUrl?: string | null }).instagramUrl ?? null,
+      businessScale:
+        (lead as { businessScale?: string | null }).businessScale ?? null,
+      websiteClassification:
+        (lead as { websiteClassification?: string | null })
+          .websiteClassification ?? null,
+      hasBookingForm:
+        (lead as { hasBookingForm?: boolean | null }).hasBookingForm ?? null,
+      hasLeadCaptureForm:
+        (lead as { hasLeadCaptureForm?: boolean | null }).hasLeadCaptureForm ??
+        null,
+      hasSeoBasics:
+        (lead as { hasSeoBasics?: boolean | null }).hasSeoBasics ?? null,
+      hasSchemaMarkup:
+        (lead as { hasSchemaMarkup?: boolean | null }).hasSchemaMarkup ?? null,
+      hasAnalytics:
+        (lead as { hasAnalytics?: boolean | null }).hasAnalytics ?? null,
     };
     const result = score(scorable, defaultRuleset);
     const digitalPresenceScore = computeDigitalPresenceScore({
@@ -67,9 +92,25 @@ export async function runScoreLead(job: ScoreLeadJob): Promise<void> {
         rulesetVersion: result.rulesetVersion,
       },
     });
+
+    scoredResult = { score: result.score, priorityTier: result.priorityTier };
   });
 
   log.info("scored");
+
+  // §6 domain event — LeadQualified (best-effort).
+  if (scoredResult) {
+    void publishDomainEvent({
+      eventName: "LeadQualified",
+      organizationId: job.organizationId,
+      occurredAt: new Date().toISOString(),
+      payload: {
+        leadId: job.leadId,
+        score: scoredResult.score,
+        tier: scoredResult.priorityTier,
+      },
+    });
+  }
 }
 /**
  * 0..100 multi-channel digital presence score. Weighted blend of:

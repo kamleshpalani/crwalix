@@ -15,10 +15,12 @@ import { withOrg } from "@crawlix/db";
 import {
   EnrichmentKind,
   EnrichmentStatus,
+  LeadEnrichmentStatus,
   JobName,
   QueueName,
 } from "@crawlix/shared";
 import { enqueue } from "@/lib/queue";
+import { emitUsage } from "@/server/lib/usage";
 
 export type EnrichmentKindStr =
   | "WEBSITE_VALIDATION"
@@ -26,7 +28,13 @@ export type EnrichmentKindStr =
   | "EMAIL_VERIFY"
   | "SOCIAL"
   | "COMPANY"
-  | "CONTACT";
+  | "CONTACT"
+  /** §8.1 — AI-generated business description. */
+  | "BUSINESS_DESCRIPTION"
+  /** §8.1 — AI-generated review summary. */
+  | "REVIEW_SUMMARY"
+  /** §9.3 — AI-generated website audit report. */
+  | "WEBSITE_REPORT";
 
 export interface EnrichmentDto {
   id: string;
@@ -34,7 +42,8 @@ export interface EnrichmentDto {
   leadName: string | null;
   kind: EnrichmentKindStr;
   provider: string;
-  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+  /** §8.2 — Per-enrichment-row status. */
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "PARTIAL";
   attempts: number;
   cost: number;
   error: string | null;
@@ -44,6 +53,35 @@ export interface EnrichmentDto {
   createdAt: string;
 }
 
+/**
+ * §8.2 — Compute the aggregate enrichment lifecycle status for a lead from
+ * its individual Enrichment rows.
+ *
+ * Rules:
+ *  - No rows                          → NOT_STARTED
+ *  - Any row is QUEUED or RUNNING     → IN_PROGRESS
+ *  - All rows FAILED                  → FAILED
+ *  - All rows SUCCEEDED               → COMPLETED
+ *  - Mix of SUCCEEDED + FAILED/SKIPPED → PARTIALLY_COMPLETED
+ */
+export function computeLeadEnrichmentStatus(
+  rows: Array<{ status: string }>,
+): string {
+  if (rows.length === 0) return LeadEnrichmentStatus.NOT_STARTED;
+  const statuses = rows.map((r) => r.status);
+  const hasActive = statuses.some((s) => s === "QUEUED" || s === "RUNNING");
+  if (hasActive) return LeadEnrichmentStatus.IN_PROGRESS;
+  const succeeded = statuses.filter((s) => s === "SUCCEEDED").length;
+  const failed = statuses.filter((s) => s === "FAILED").length;
+  const skipped = statuses.filter(
+    (s) => s === "SKIPPED" || s === "PARTIAL",
+  ).length;
+  const total = statuses.length;
+  if (succeeded === total) return LeadEnrichmentStatus.COMPLETED;
+  if (failed + skipped === total) return LeadEnrichmentStatus.FAILED;
+  return LeadEnrichmentStatus.PARTIALLY_COMPLETED;
+}
+
 const JOB_BY_KIND: Record<EnrichmentKindStr, string> = {
   WEBSITE_VALIDATION: JobName.ENRICH_WEBSITE,
   EMAIL: JobName.ENRICH_EMAIL,
@@ -51,6 +89,9 @@ const JOB_BY_KIND: Record<EnrichmentKindStr, string> = {
   SOCIAL: JobName.ENRICH_SOCIAL,
   COMPANY: JobName.ENRICH_COMPANY,
   CONTACT: JobName.ENRICH_CONTACT,
+  BUSINESS_DESCRIPTION: JobName.ENRICH_BUSINESS_DESCRIPTION,
+  REVIEW_SUMMARY: JobName.ENRICH_REVIEW_SUMMARY,
+  WEBSITE_REPORT: JobName.ENRICH_WEBSITE_REPORT,
 };
 
 const PROVIDER_BY_KIND: Record<EnrichmentKindStr, string> = {
@@ -60,6 +101,9 @@ const PROVIDER_BY_KIND: Record<EnrichmentKindStr, string> = {
   SOCIAL: "crawlix-social",
   COMPANY: "crawlix-company",
   CONTACT: "crawlix-contact",
+  BUSINESS_DESCRIPTION: "crawlix-ai",
+  REVIEW_SUMMARY: "crawlix-ai",
+  WEBSITE_REPORT: "crawlix-ai",
 };
 
 export interface QueueInput {
@@ -109,6 +153,12 @@ async function queueOne(
       },
     });
 
+    // §8.2 — mark lead's aggregate enrichment status as IN_PROGRESS.
+    await tx.lead.update({
+      where: { id: leadId },
+      data: { enrichmentStatus: LeadEnrichmentStatus.IN_PROGRESS },
+    });
+
     await enqueue(QueueName.ENRICHMENT, JOB_BY_KIND[kind], {
       organizationId: orgId,
       enrichmentId: enrichment.id,
@@ -116,6 +166,17 @@ async function queueOne(
       kind: EnrichmentKind[kind],
       provider: PROVIDER_BY_KIND[kind],
     });
+
+    emitUsage({
+      organizationId: orgId,
+      kind: "lead.enriched",
+      quantity: 1,
+      refId: enrichment.id,
+      meta: { leadId, enrichmentKind: kind, provider: PROVIDER_BY_KIND[kind] },
+    }).catch(() => {
+      /* metering must never break enrichment */
+    });
+
     return { leadId, kind, enrichmentId: enrichment.id };
   });
 }
@@ -238,4 +299,11 @@ async function summary(
   });
 }
 
-export const enrichmentService = { queue, bulkQueue, list, get, summary };
+export const enrichmentService = {
+  queue,
+  bulkQueue,
+  list,
+  get,
+  summary,
+  computeLeadEnrichmentStatus,
+};

@@ -27,6 +27,9 @@ import { runSearchIngest } from "./pipelines/search-ingest";
 import { runScoreLead } from "./pipelines/score-lead";
 import { runWebsiteEnrichment } from "./pipelines/enrich-website";
 import { runStubEnrichment } from "./pipelines/enrich-stub";
+import { runBusinessDescriptionEnrichment } from "./pipelines/enrich-business-description";
+import { runReviewSummaryEnrichment } from "./pipelines/enrich-review-summary";
+import { runWebsiteReportEnrichment } from "./pipelines/enrich-website-report";
 import { runIntelBuild } from "./pipelines/intel-build";
 import { runComplianceCleanup } from "./pipelines/compliance-cleanup";
 import { runGenerateProposal } from "./pipelines/generate-proposal";
@@ -91,6 +94,12 @@ const enrichmentWorker = makeWorker<EnrichmentJob | IntelBuildJob>(
       name === JobName.ENRICH_CONTACT
     )
       return runStubEnrichment(data as EnrichmentJob);
+    if (name === JobName.ENRICH_BUSINESS_DESCRIPTION)
+      return runBusinessDescriptionEnrichment(data as EnrichmentJob);
+    if (name === JobName.ENRICH_REVIEW_SUMMARY)
+      return runReviewSummaryEnrichment(data as EnrichmentJob);
+    if (name === JobName.ENRICH_WEBSITE_REPORT)
+      return runWebsiteReportEnrichment(data as EnrichmentJob);
     if (name === JobName.INTEL_BUILD)
       return runIntelBuild(data as IntelBuildJob);
     logger.warn({ name }, "unknown enrichment job");

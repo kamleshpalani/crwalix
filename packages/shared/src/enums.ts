@@ -96,10 +96,40 @@ export const WebsiteHealth = {
 } as const;
 export type WebsiteHealth = (typeof WebsiteHealth)[keyof typeof WebsiteHealth];
 
+/**
+ * §9.1 — Human-readable classification of the lead's website state.
+ * Derived from the website audit result.
+ */
+export const WebsiteClassification = {
+  /** Lead has no website URL on record. */
+  NO_WEBSITE: "NO_WEBSITE",
+  /** Website was reachable and passes basic health checks. */
+  WEBSITE_FOUND: "WEBSITE_FOUND",
+  /** Website URL does not resolve or returns no usable response. */
+  NOT_LOADING: "NOT_LOADING",
+  /** Site is live but has staleness signals (old copyright, old content). */
+  OUTDATED: "OUTDATED",
+  /** Site is live, fast, mobile-friendly — minimal improvement scope. */
+  MODERN: "MODERN",
+  /** Multiple structural/UX failures — prime redesign candidate. */
+  NEEDS_REDESIGN: "NEEDS_REDESIGN",
+  /** HTTPS failure, Flash, broken redirect, or bot-block detected. */
+  TECHNICAL_ISSUES: "TECHNICAL_ISSUES",
+} as const;
+export type WebsiteClassification =
+  (typeof WebsiteClassification)[keyof typeof WebsiteClassification];
+
 export const PriorityTier = {
+  /** 80–100: High-priority lead — pitch immediately. */
+  CRITICAL: "CRITICAL",
+  /** 60–79: Good lead — worth a follow-up call. */
   HIGH: "HIGH",
+  /** 40–59: Medium-priority lead — add to nurture sequence. */
   MEDIUM: "MEDIUM",
+  /** 20–39: Low-priority lead — only if pipeline is empty. */
   LOW: "LOW",
+  /** 0–19: Not recommended — do not contact at this time. */
+  NOT_RECOMMENDED: "NOT_RECOMMENDED",
 } as const;
 export type PriorityTier = (typeof PriorityTier)[keyof typeof PriorityTier];
 
@@ -127,6 +157,10 @@ export const EnrichmentKind = {
   SOCIAL: "SOCIAL",
   COMPANY: "COMPANY",
   CONTACT: "CONTACT",
+  /** §8.1 — AI-generated business description from lead signals. */
+  BUSINESS_DESCRIPTION: "BUSINESS_DESCRIPTION",
+  /** §8.1 — AI-generated review summary from rating + review count. */
+  REVIEW_SUMMARY: "REVIEW_SUMMARY",
 } as const;
 export type EnrichmentKind =
   (typeof EnrichmentKind)[keyof typeof EnrichmentKind];
@@ -137,9 +171,25 @@ export const EnrichmentStatus = {
   SUCCEEDED: "SUCCEEDED",
   FAILED: "FAILED",
   SKIPPED: "SKIPPED",
+  /** §8.2 — Some enrichment steps succeeded, others failed/skipped. */
+  PARTIAL: "PARTIAL",
 } as const;
 export type EnrichmentStatus =
   (typeof EnrichmentStatus)[keyof typeof EnrichmentStatus];
+
+/**
+ * §8.2 — Aggregate enrichment lifecycle status on the Lead level.
+ * Computed from the set of Enrichment rows for a given lead.
+ */
+export const LeadEnrichmentStatus = {
+  NOT_STARTED: "NOT_STARTED",
+  IN_PROGRESS: "IN_PROGRESS",
+  COMPLETED: "COMPLETED",
+  FAILED: "FAILED",
+  PARTIALLY_COMPLETED: "PARTIALLY_COMPLETED",
+} as const;
+export type LeadEnrichmentStatus =
+  (typeof LeadEnrichmentStatus)[keyof typeof LeadEnrichmentStatus];
 
 export const JobStatus = {
   QUEUED: "QUEUED",
@@ -230,31 +280,58 @@ export type BusinessStatus =
  */
 export interface PriorityRecommendation {
   label:
-    | "No Website"
-    | "Website Needs Improvement"
-    | "Proper Website"
+    | "Critical Priority"
+    | "High Priority"
+    | "Medium Priority"
+    | "Low Priority"
+    | "Not Recommended"
     | "Unscored";
   action: string;
+  /** §10.1 — Score band for this tier. */
+  scoreBand: string;
 }
 
 export function getPriorityRecommendation(
   tier: PriorityTier | string | null | undefined,
 ): PriorityRecommendation {
   switch (tier) {
+    case PriorityTier.CRITICAL:
+      return {
+        label: "Critical Priority",
+        action: "Contact immediately — pitch new website or full redesign",
+        scoreBand: "80–100",
+      };
     case PriorityTier.HIGH:
-      return { label: "No Website", action: "Pitch new website package" };
+      return {
+        label: "High Priority",
+        action: "Follow up this week — good fit for redesign or SEO",
+        scoreBand: "60–79",
+      };
     case PriorityTier.MEDIUM:
       return {
-        label: "Website Needs Improvement",
-        action: "Pitch redesign / modernization",
+        label: "Medium Priority",
+        action: "Add to nurture sequence — pitch improvements",
+        scoreBand: "40–59",
       };
     case PriorityTier.LOW:
       return {
-        label: "Proper Website",
-        action: "Low priority — nurture later",
+        label: "Low Priority",
+        action: "Low priority — contact only if pipeline is empty",
+        scoreBand: "20–39",
+      };
+    case PriorityTier.NOT_RECOMMENDED:
+      return {
+        label: "Not Recommended",
+        action:
+          "Do not contact — poor fit or already has strong online presence",
+        scoreBand: "0–19",
       };
     default:
-      return { label: "Unscored", action: "Awaiting score" };
+      return {
+        label: "Unscored",
+        action: "Awaiting score",
+        scoreBand: "N/A",
+      };
   }
 }
 

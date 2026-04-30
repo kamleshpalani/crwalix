@@ -7,7 +7,13 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireOrg, isResponse, isAuthError } from "@/lib/auth";
+import {
+  requireOrg,
+  isResponse,
+  isAuthError,
+  hasProjectAccess,
+  requireRole,
+} from "@/lib/auth";
 import {
   portalService,
   isPortalConfigured,
@@ -39,6 +45,8 @@ export async function POST(
   if (isResponse(ctx)) return ctx;
   if (isAuthError(ctx))
     return NextResponse.json({ error: { code: ctx.code } }, { status: 403 });
+  const denied = requireRole(ctx, hasProjectAccess);
+  if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
   const parsed = Schema.safeParse(body);

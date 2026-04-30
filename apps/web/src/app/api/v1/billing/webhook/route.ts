@@ -23,6 +23,7 @@ import { prisma, withOrg } from "@crawlix/db";
 import { constructWebhookEvent } from "@crawlix/billing";
 import { emitNotification } from "@/server/lib/notify";
 import { NotificationKind } from "@/server/services/notification-kinds";
+import { publishDomainEvent } from "@/server/lib/domain-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -284,6 +285,18 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
         href: "/settings/billing",
         data: { stripeSubscriptionId: sub.id, status: sub.status },
       });
+      // §6 domain event — SubscriptionCanceled.
+      void publishDomainEvent({
+        eventName: "SubscriptionCanceled",
+        organizationId: orgId,
+        occurredAt: new Date().toISOString(),
+        payload: {
+          subscriptionId: sub.id,
+          canceledAt: sub.cancel_at
+            ? new Date(sub.cancel_at * 1000).toISOString()
+            : new Date().toISOString(),
+        },
+      });
     } else if (
       type === "customer.subscription.updated" &&
       sub.status === "active"
@@ -327,6 +340,16 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
         body: `${((inv.amount_paid ?? inv.total ?? 0) / 100).toFixed(2)} ${(inv.currency ?? "USD").toUpperCase()} via Stripe.`,
         href: "/invoices",
         data: { stripeInvoiceId: inv.id, number: inv.number ?? null },
+      });
+      // §6 domain event — InvoicePaid.
+      void publishDomainEvent({
+        eventName: "InvoicePaid",
+        organizationId: orgId,
+        occurredAt: new Date().toISOString(),
+        payload: {
+          invoiceId: inv.id,
+          amountCents: inv.amount_paid ?? inv.total ?? 0,
+        },
       });
     } else if (type === "invoice.payment_failed") {
       void emitNotification({

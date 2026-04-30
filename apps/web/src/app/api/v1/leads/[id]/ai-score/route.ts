@@ -3,10 +3,18 @@
  *
  * Triggers an on-demand AI scoring pass for a lead and persists the result.
  *
- * Returns: {
- *   score: number,      // 0-100
- *   tier: string,       // CRITICAL | HIGH | MEDIUM | LOW
+ * §10.3 Response shape:
+ * {
+ *   score: number,                  // 0-100
+ *   tier: string,                   // CRITICAL | HIGH | MEDIUM | LOW | NOT_RECOMMENDED
  *   reasoning: string,
+ *   contactRecommended: boolean,
+ *   bestServicePitch: string,
+ *   outreachAngle: string,
+ *   suggestedPackage: string,
+ *   estimatedDealSize: string,
+ *   conversionProbability: number,  // 0-100
+ *   suggestedNextAction: string,
  *   usage: {...}
  * }
  */
@@ -41,6 +49,16 @@ export async function POST(
       reviewCount: true,
       score: true,
       tags: true,
+      // §10.2 — Extended audit + enrichment signals for AI scoring
+      businessScale: true,
+      websiteClassification: true,
+      websiteHealthScore: true,
+      hasSeoBasics: true,
+      hasSchemaMarkup: true,
+      hasAnalytics: true,
+      hasBookingForm: true,
+      hasLeadCaptureForm: true,
+      isMobileReady: true,
     },
   });
 
@@ -63,6 +81,21 @@ export async function POST(
       reviewCount: lead.reviewCount,
       score: lead.score,
       tags: lead.tags,
+      // §10.2 — Audit signals
+      businessScale: (lead as { businessScale?: string | null }).businessScale,
+      websiteClassification: (lead as { websiteClassification?: string | null })
+        .websiteClassification,
+      websiteHealthScore: lead.websiteHealthScore,
+      hasSeoBasics: (lead as { hasSeoBasics?: boolean | null }).hasSeoBasics,
+      hasSchemaMarkup: (lead as { hasSchemaMarkup?: boolean | null })
+        .hasSchemaMarkup,
+      hasAnalytics: (lead as { hasAnalytics?: boolean | null }).hasAnalytics,
+      hasBookingForm: (lead as { hasBookingForm?: boolean | null })
+        .hasBookingForm,
+      hasLeadCaptureForm: (lead as { hasLeadCaptureForm?: boolean | null })
+        .hasLeadCaptureForm,
+      hasMobileViewport: (lead as { isMobileReady?: boolean | null })
+        .isMobileReady,
     },
   });
 
@@ -89,6 +122,14 @@ export async function POST(
     score: result.score,
     tier: result.tier,
     reasoning: result.reasoning,
+    // §10.3 — Sales recommendations
+    contactRecommended: result.contactRecommended,
+    bestServicePitch: result.bestServicePitch,
+    outreachAngle: result.outreachAngle,
+    suggestedPackage: result.suggestedPackage,
+    estimatedDealSize: result.estimatedDealSize,
+    conversionProbability: result.conversionProbability,
+    suggestedNextAction: result.suggestedNextAction,
     usage: result.usage,
     provider: result.provider,
     model: result.model,
