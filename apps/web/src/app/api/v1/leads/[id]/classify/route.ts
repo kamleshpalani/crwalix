@@ -148,8 +148,7 @@ export async function POST(
     orgId: ctx.orgId,
     userId: ctx.userId,
     action: "lead.classify",
-    resourceType: "lead",
-    resourceId: lead.id,
+    target: lead.id,
     metadata: {
       scale: classification.scale,
       confidence: classification.confidence,
