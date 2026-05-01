@@ -31,6 +31,9 @@ export const JobName = {
   OUTREACH_SEQUENCE_TICK: "outreach.sequenceTick",
   OUTREACH_CLASSIFY_REPLY: "outreach.classifyReply",
   DSAR_PROCESS: "system.dsarProcess",
+  /** Vibe Prospecting — Claude full lead analysis + outreach generation. */
+  VIBE_PROSPECT: "vibe.prospect",
+  VIBE_PROSPECT_BULK: "vibe.prospectBulk",
 } as const;
 export type JobName = (typeof JobName)[keyof typeof JobName];
 
@@ -43,6 +46,7 @@ export const QueueName = {
   SYSTEM: "system",
   CRM: "crm",
   OUTREACH: "outreach",
+  VIBE: "vibe",
   DOMAIN_EVENTS: "domain-events",
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
@@ -165,7 +169,24 @@ export interface GenerateProposalJob {
   tone?: ProposalTone;
   /** Optional pricing band shown verbatim, e.g. "$3,000–$4,500". */
   priceBand?: string;
-  /** Userid that triggered the generation; recorded on the Proposal row. */
+  /** Userid that triggered the generation; recorded on the Proposal row. */ triggeredByUserId?: string;
+}
+
+/** Vibe Prospecting — single lead full analysis by Claude. */
+export interface VibeProspectJob {
+  organizationId: string;
+  leadId: string;
+  /** Optional agency name used in generated outreach messages. */
+  agencyName?: string | null;
+  /** User who triggered the analysis; used for audit trail. */
+  triggeredByUserId?: string | null;
+}
+
+/** Vibe Prospecting — bulk analysis for multiple leads. */
+export interface VibeProspectBulkJob {
+  organizationId: string;
+  leadIds: string[];
+  agencyName?: string | null;
   triggeredByUserId?: string;
 }
 

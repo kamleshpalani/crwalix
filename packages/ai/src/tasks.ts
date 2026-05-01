@@ -30,6 +30,14 @@ export interface DraftProposalArgs {
   tone?: "professional" | "friendly" | "concise" | "persuasive" | "executive";
   /** Optional pricing band the AI must use verbatim, e.g. "$3,000–$4,500". */
   priceBand?: string;
+  /** Optional maintenance/support packages to include in the proposal. */
+  maintenanceOptions?: string[] | null;
+  /** Optional add-on services to surface, e.g. ["SEO audit", "Copywriting"]. */
+  addons?: string[] | null;
+  /** Custom terms & conditions text; if omitted AI generates sensible defaults. */
+  termsAndConditions?: string | null;
+  /** Name of the acceptance/signatory contact, used to personalise the acceptance block. */
+  signatoryName?: string | null;
 }
 
 const TONE_GUIDANCE: Record<NonNullable<DraftProposalArgs["tone"]>, string> = {
@@ -49,20 +57,33 @@ const SYSTEM_TEMPLATE = (tone: string, priceBand?: string) =>
   `You are an expert B2B sales engineer writing concise, personalized proposals.
 ${tone}
 Output a clean self-contained HTML document (no markdown, no <html>/<head> wrapper — just a <section>) using these labelled blocks IN THIS EXACT ORDER. Each block must be wrapped in <section data-block="<id>"> so downstream renderers can re-style them:
-  cover       — <h1> with the prospect's business name + a one-line subtitle
-  summary     — <p> 2–3 sentences proving you researched them; reference 1–2 specific findings
-  problems    — <h2>Problems we observed</h2> + <ul> with 3–5 issues (each <li> tagged with <strong> impact label)
-  solution    — <h2>Our approach</h2> + <p> describing the recommended path
-  scope       — <h2>Scope</h2> + <ul> of in-scope items
-  deliverables— <h2>Deliverables</h2> + <ul> with 3–5 concrete artifacts
-  timeline    — <h2>Timeline</h2> + <ol> with 3–4 phases (week ranges)
-  pricing     — <h2>Investment</h2> + <p> with the price${priceBand ? ` (use exactly: ${priceBand})` : ' band (placeholder e.g. "$X–Y")'}
-  terms       — <h2>Terms</h2> + <ul> with 3–4 short bullets (validity, deposit, deliverable acceptance)
-  cta         — <h2>Next step</h2> + 1-sentence call to action
-Keep total length under 500 words. Never invent specific numbers or facts not present in the input. Do NOT include any text outside the outer <section>.`;
+  cover            — <h1> with the prospect's business name + a one-line subtitle
+  summary          — <p> 2–3 sentences proving you researched them; reference 1–2 specific findings
+  problems         — <h2>Problems we observed</h2> + <ul> with 3–5 issues (each <li> tagged with <strong> impact label)
+  solution         — <h2>Our approach</h2> + <p> describing the recommended path
+  scope            — <h2>Scope</h2> + <ul> of in-scope items
+  deliverables     — <h2>Deliverables</h2> + <ul> with 3–5 concrete artifacts
+  timeline         — <h2>Timeline</h2> + <ol> with 3–4 phases (week ranges)
+  pricing          — <h2>Investment</h2> + <p> with the price${priceBand ? ` (use exactly: ${priceBand})` : ' band (placeholder e.g. "$X–Y")'}
+  payment_terms    — <h2>Payment Terms</h2> + <ul> with deposit %, milestone schedule, and final payment trigger
+  maintenance      — <h2>Maintenance & Support</h2> + <ul> listing ongoing support options and monthly retainer range (use provided options if given, otherwise suggest sensible defaults)
+  addons           — <h2>Optional Add-ons</h2> + <ul> of enhancement services with indicative prices (use provided list if given)
+  terms_conditions — <h2>Terms & Conditions</h2> + <ul> with 5–7 bullets: IP ownership, revision rounds, confidentiality, liability cap, governing law, cancellation, force majeure (use provided text if given, otherwise generate reasonable defaults)
+  acceptance       — <h2>Acceptance</h2> + a short paragraph asking the client to confirm by reply or signature, a blank line for signature + printed name, and a date field. If a signatory name was provided, pre-fill the printed name field.
+  cta              — <h2>Next step</h2> + 1-sentence call to action
+Keep total length under 700 words. Never invent specific numbers or facts not present in the input. Do NOT include any text outside the outer <section>.`;
 
 function userPrompt(args: DraftProposalArgs): string {
-  const { org, lead, offering, priceBand } = args;
+  const {
+    org,
+    lead,
+    offering,
+    priceBand,
+    maintenanceOptions,
+    addons,
+    termsAndConditions,
+    signatoryName,
+  } = args;
   const findings = [
     lead.website ? `website: ${lead.website}` : "no website on record",
     lead.websiteHealth ? `health: ${lead.websiteHealth}` : null,
@@ -96,6 +117,16 @@ function userPrompt(args: DraftProposalArgs): string {
     priceBand
       ? `Price band (use verbatim in pricing block): ${priceBand}`
       : null,
+    maintenanceOptions?.length
+      ? `Maintenance options to include: ${maintenanceOptions.join(", ")}`
+      : null,
+    addons?.length ? `Optional add-ons to list: ${addons.join(", ")}` : null,
+    termsAndConditions
+      ? `Custom T&C (use verbatim in terms_conditions block):\n${termsAndConditions}`
+      : null,
+    signatoryName
+      ? `Signatory name for acceptance block: ${signatoryName}`
+      : null,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -117,7 +148,7 @@ export async function draftProposal(
     taskKind: "proposal.draft",
     organizationId: args.organizationId,
     temperature: 0.4,
-    maxTokens: 1600,
+    maxTokens: 2400,
     messages: [
       { role: "system", content: system },
       { role: "user", content: userPrompt(args) },
@@ -1279,6 +1310,499 @@ export async function auditWebsiteWithAi(args: AiWebsiteAuditInput): Promise<{
 
   return {
     report,
+    usage: result.usage,
+    provider: result.provider,
+    model: result.model,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Vibe Prospecting — Claude-powered full lead analysis + outreach generation  */
+/* -------------------------------------------------------------------------- */
+
+export interface VibeProspectInput {
+  organizationId: string;
+  lead: {
+    name: string;
+    category?: string | null;
+    city?: string | null;
+    country?: string | null;
+    website?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+    websiteStatus?: string | null;
+    websiteHealthScore?: number | null;
+    websiteClassification?: string | null;
+    hasBookingForm?: boolean | null;
+    hasSeoBasics?: boolean | null;
+    hasAnalytics?: boolean | null;
+    hasLeadCaptureForm?: boolean | null;
+    hasContactForm?: boolean | null;
+    hasSchemaMarkup?: boolean | null;
+    isMobileReady?: boolean | null;
+    facebookUrl?: string | null;
+    instagramUrl?: string | null;
+    techStack?: string[] | null;
+    digitalPresenceScore?: number | null;
+    businessScale?: string | null;
+    source?: string | null;
+    intelSummary?: string | null;
+  };
+  /** Optional name/pitch of the agency running the prospecting. */
+  agencyName?: string | null;
+}
+
+export interface VibeProspectResult {
+  /** 0–100 AI vibe score. */
+  leadScore: number;
+  /** Whether the AI recommends contacting this lead. */
+  shouldContact: boolean;
+  /** Short description of the business's digital vibe. */
+  vibe: string;
+  /** Detected business pain points. */
+  painPoints: string[];
+  /** Recommended primary service. */
+  recommendedService: string;
+  /** Recommended package name (Starter / Growth / Premium / Enterprise). */
+  recommendedPackage: string;
+  /** One-sentence strongest hook / outreach angle. */
+  outreachAngle: string;
+  /** Estimated deal size range, e.g. '$3,000–$7,000'. */
+  estimatedDealSize: string;
+  /** 0–100 estimated probability of conversion. */
+  conversionProbability: number;
+  /** Suggested immediate next action. */
+  nextAction: string;
+  /** Personalised cold email ready to send. */
+  coldEmail: string;
+  /** Personalised WhatsApp message (short, conversational). */
+  whatsappMessage: string;
+  /** 60-second call script opening. */
+  callScript: string;
+  /** Short follow-up message for day 3–5. */
+  followUpMessage: string;
+  usage: AiCompleteResult["usage"];
+  provider: AiCompleteResult["provider"];
+  model: AiCompleteResult["model"];
+}
+
+const VIBE_SYSTEM = `You are an expert B2B sales consultant helping a digital agency identify high-value small business prospects.
+Analyse the provided business lead data and return a full vibe prospecting analysis.
+
+Respond ONLY with valid JSON matching this exact shape (no markdown, no prose outside the object):
+{
+  "leadScore": <integer 0-100>,
+  "shouldContact": <true|false — true if score >= 40 and the business is a realistic prospect>,
+  "vibe": "<one sentence: the business's digital presence vibe, e.g. 'Established local restaurant with zero online booking and an outdated mobile site'>",
+  "painPoints": ["<pain point 1>", "<pain point 2>", ...up to 6],
+  "recommendedService": "<primary service, e.g. 'Website Redesign + Local SEO'>",
+  "recommendedPackage": "<package tier: Starter | Growth | Premium | Enterprise>",
+  "outreachAngle": "<one sentence: the single strongest hook — what specific problem will you solve for them>",
+  "estimatedDealSize": "<realistic price range based on package tier, e.g. '$3,000–$7,000'>",
+  "conversionProbability": <integer 0-100 — likelihood this lead converts to a paying client>,
+  "nextAction": "<specific recommended immediate next step, e.g. 'Send cold email today, follow up on WhatsApp in 3 days if no reply'>",
+  "coldEmail": "<full personalised cold email, subject line first on its own line prefixed 'Subject: ', then body; 100-150 words; polite, not pushy>",
+  "whatsappMessage": "<50-80 word conversational WhatsApp intro; friendly tone; end with a question>",
+  "callScript": "<60-second call opener script; 80-120 words; include a hook, value prop, and one open question>",
+  "followUpMessage": "<50-70 word polite follow-up for 3-5 days after first contact>"
+}
+
+Scoring guide — consider ALL of these factors:
+- No website or completely broken → +25
+- Outdated / low health score (<50) → +15
+- Poor mobile readiness → +10
+- High-demand category (dental, legal, medical, spa, fitness, restaurant, hotel) → +15
+- High rating (4.0+) + high review count (100+) → +10 (ability and social proof to pay)
+- Contact details available (phone + email) → +5
+- Active social media presence (has Facebook/Instagram) → -5 (already digital)
+- Weak SEO (missing title, meta, schema markup) → +10
+- Missing online booking for bookable business → +10
+- Missing e-commerce for retail/product business → +10
+- Missing lead capture / contact form → +8
+- Low digital presence score (<40) → +10
+- Business location (high-income area → higher priority) → ±5
+- Business size (micro/small with revenue potential → higher; enterprise already has agency) → ±5
+- Estimated ability to pay: derive from scale + category + rating signals
+
+Score categories:
+- 80–100: High-priority lead — contact immediately
+- 60–79: Good lead — worth pursuing
+- 40–59: Medium-priority — nurture
+- 20–39: Low-priority — low urgency
+- 0–19: Not recommended — skip
+
+Package tiers:
+- Starter ($1,000–$3,000): simple site, basic SEO
+- Growth ($3,000–$7,000): full redesign, SEO, booking or lead form
+- Premium ($7,000–$15,000): advanced features, e-commerce, automation
+- Enterprise ($15,000+): custom solutions, multiple integrations
+
+Rules:
+- Always mention the business name in emails and messages
+- Reference at least one specific pain point in each message
+- Keep outreach polite, personalised, and non-spammy
+- Never fabricate contact details or prices the data doesn't support
+- callScript must start naturally: "Hi, is this [Name]? …"
+- conversionProbability should reflect real sales realism (rarely above 70 unless very strong signals)`;
+
+function buildVibePrompt(input: VibeProspectInput): string {
+  const { lead, agencyName } = input;
+
+  // Detect e-commerce signals from tech stack
+  const ecommerceKeywords = [
+    "shopify",
+    "woocommerce",
+    "magento",
+    "bigcommerce",
+    "opencart",
+  ];
+  const hasEcommerce = lead.techStack
+    ? lead.techStack.some((t) =>
+        ecommerceKeywords.some((k) => t.toLowerCase().includes(k)),
+      )
+    : null;
+
+  const lines = [
+    `Business name: ${lead.name}`,
+    lead.category ? `Category: ${lead.category}` : null,
+    [lead.city, lead.country].filter(Boolean).length
+      ? `Location: ${[lead.city, lead.country].filter(Boolean).join(", ")}`
+      : "Location: unknown",
+    lead.website ? `Website: ${lead.website}` : "Website: NONE",
+    lead.websiteClassification
+      ? `Website classification: ${lead.websiteClassification}`
+      : null,
+    lead.websiteStatus ? `Website status: ${lead.websiteStatus}` : null,
+    typeof lead.websiteHealthScore === "number"
+      ? `Website health score: ${lead.websiteHealthScore}/100`
+      : null,
+    lead.isMobileReady === false
+      ? "Mobile readiness: NOT mobile-ready"
+      : lead.isMobileReady === true
+        ? "Mobile readiness: mobile-ready"
+        : null,
+    lead.phone ? `Phone: available` : "Phone: not available",
+    lead.email ? `Email: available` : "Email: not available",
+    typeof lead.rating === "number"
+      ? `Rating: ${lead.rating.toFixed(1)} (${lead.reviewCount ?? 0} reviews)`
+      : "Rating: unknown",
+    lead.businessScale ? `Business scale: ${lead.businessScale}` : null,
+    typeof lead.digitalPresenceScore === "number"
+      ? `Digital presence score: ${lead.digitalPresenceScore}/100`
+      : null,
+    // Social presence
+    lead.facebookUrl ? `Facebook: active page` : "Facebook: none",
+    lead.instagramUrl ? `Instagram: active account` : "Instagram: none",
+    // Website feature signals
+    lead.hasBookingForm === false ? "Online booking: MISSING" : null,
+    lead.hasLeadCaptureForm === false ? "Lead capture form: MISSING" : null,
+    lead.hasContactForm === false ? "Contact form: MISSING" : null,
+    lead.hasSeoBasics === false ? "SEO basics (title/meta): MISSING" : null,
+    lead.hasSchemaMarkup === false ? "Schema markup: MISSING" : null,
+    lead.hasAnalytics === false ? "Web analytics: not detected" : null,
+    hasEcommerce === false ? "E-commerce: NONE detected" : null,
+    hasEcommerce === true ? "E-commerce: present" : null,
+    lead.techStack?.length
+      ? `Tech stack: ${lead.techStack.slice(0, 8).join(", ")}`
+      : null,
+    lead.source ? `Lead source: ${lead.source}` : null,
+    lead.intelSummary ? `Intel summary: ${lead.intelSummary}` : null,
+    agencyName ? `\nAgency name (use in outreach): ${agencyName}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `Analyse this business lead and generate a complete vibe prospecting package:\n\n${lines}`;
+}
+
+function parseVibeJson(text: string): Record<string, unknown> {
+  const match = text.match(/\{[\s\S]*\}/);
+  const raw = match ? match[0] : text;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+export async function vibeProspectLead(
+  args: VibeProspectInput,
+): Promise<VibeProspectResult> {
+  const result = await aiComplete({
+    taskKind: "vibe.prospect",
+    organizationId: args.organizationId,
+    temperature: 0.5,
+    maxTokens: 1200,
+    jsonMode: true,
+    messages: [
+      { role: "system", content: VIBE_SYSTEM },
+      { role: "user", content: buildVibePrompt(args) },
+    ],
+  });
+
+  const parsed = parseVibeJson(result.text);
+  const toStrArr = (v: unknown, max = 8): string[] =>
+    Array.isArray(v)
+      ? v
+          .filter(
+            (x): x is string => typeof x === "string" && x.trim().length > 0,
+          )
+          .slice(0, max)
+          .map((s) => s.trim())
+      : [];
+
+  const leadScore = clampLeadScore(parsed.leadScore);
+  const conversionProbability = clampLeadScore(parsed.conversionProbability);
+
+  return {
+    leadScore,
+    shouldContact:
+      typeof parsed.shouldContact === "boolean"
+        ? parsed.shouldContact
+        : leadScore >= 40,
+    vibe:
+      typeof parsed.vibe === "string" && parsed.vibe.trim()
+        ? parsed.vibe.trim()
+        : "Business detected with limited digital presence data.",
+    painPoints: toStrArr(parsed.painPoints),
+    recommendedService:
+      typeof parsed.recommendedService === "string" &&
+      parsed.recommendedService.trim()
+        ? parsed.recommendedService.trim()
+        : "Website Review",
+    recommendedPackage:
+      typeof parsed.recommendedPackage === "string" &&
+      parsed.recommendedPackage.trim()
+        ? parsed.recommendedPackage.trim()
+        : "Starter",
+    outreachAngle:
+      typeof parsed.outreachAngle === "string" && parsed.outreachAngle.trim()
+        ? parsed.outreachAngle.trim()
+        : "Help improve their digital presence and attract more customers.",
+    estimatedDealSize:
+      typeof parsed.estimatedDealSize === "string" &&
+      parsed.estimatedDealSize.trim()
+        ? parsed.estimatedDealSize.trim()
+        : "$1,000–$3,000",
+    conversionProbability,
+    nextAction:
+      typeof parsed.nextAction === "string" && parsed.nextAction.trim()
+        ? parsed.nextAction.trim()
+        : "Send personalised cold email, follow up in 3–5 days.",
+    coldEmail:
+      typeof parsed.coldEmail === "string" && parsed.coldEmail.trim()
+        ? parsed.coldEmail.trim()
+        : `Subject: Quick question about ${args.lead.name}'s online presence\n\nHi,\n\nI came across ${args.lead.name} and wanted to reach out about how we could help boost your online visibility.\n\nWould you be open to a quick 10-minute call?`,
+    whatsappMessage:
+      typeof parsed.whatsappMessage === "string" &&
+      parsed.whatsappMessage.trim()
+        ? parsed.whatsappMessage.trim()
+        : `Hi! I came across ${args.lead.name} and think we could help you get more customers online. Would you be open to a quick chat?`,
+    callScript:
+      typeof parsed.callScript === "string" && parsed.callScript.trim()
+        ? parsed.callScript.trim()
+        : `Hi, is this the owner of ${args.lead.name}? Great! I'm reaching out because I noticed your business online and I think we can help you attract more customers. Do you have 2 minutes?`,
+    followUpMessage:
+      typeof parsed.followUpMessage === "string" &&
+      parsed.followUpMessage.trim()
+        ? parsed.followUpMessage.trim()
+        : `Hi, just following up on my earlier message about ${args.lead.name}. I'd love to share a few ideas that could help your business grow online. Let me know if you're interested!`,
+    usage: result.usage,
+    provider: result.provider,
+    model: result.model,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* §12 CRM — AI Next-Best-Action recommendation                                */
+/* -------------------------------------------------------------------------- */
+
+export interface CrmNextActionInput {
+  organizationId: string;
+  deal: {
+    title: string;
+    amountCents: number;
+    currency: string;
+    status: string;
+    stageName: string;
+    stageProbability: number;
+    isWonStage: boolean;
+    isLostStage: boolean;
+    ownerName?: string | null;
+    expectedCloseAt?: string | null;
+    followUpAt?: string | null;
+    leadName?: string | null;
+    leadCategory?: string | null;
+    leadWebsite?: string | null;
+    leadScore?: number | null;
+  };
+  /** Last N activities on this deal, newest first. */
+  recentActivities: {
+    kind: string;
+    summary: string;
+    occurredAt: string;
+    isDone?: boolean;
+  }[];
+  /** How many open tasks exist. */
+  openTaskCount: number;
+}
+
+export interface CrmNextActionResult {
+  /** Short headline, e.g. "Follow up with a demo offer". */
+  headline: string;
+  /** 2–4 sentence explanation of why this is the best action. */
+  rationale: string;
+  /** One concrete action (verb phrase), e.g. "Send the revised proposal today". */
+  action: string;
+  /** Urgency level. */
+  urgency: "NOW" | "THIS_WEEK" | "NEXT_WEEK" | "LOW";
+  /** Suggested message template (1–3 sentences) the user can copy. */
+  messageTemplate: string;
+  usage: AiCompleteResult["usage"];
+  provider: AiCompleteResult["provider"];
+  model: AiCompleteResult["model"];
+}
+
+const NBA_SYSTEM = `You are an expert B2B sales coach advising a sales rep on their next best action for a specific CRM deal.
+Analyse the deal stage, recent activity, and context, then return a focused, concrete recommendation.
+
+Respond ONLY with valid JSON (no markdown, no prose outside the object):
+{
+  "headline": "<8 words or fewer — the key action>",
+  "rationale": "<2-4 sentences explaining WHY this is the best move right now>",
+  "action": "<one concrete verb phrase the rep can act on immediately>",
+  "urgency": "<NOW | THIS_WEEK | NEXT_WEEK | LOW>",
+  "messageTemplate": "<1-3 sentence message template the rep can adapt and send>"
+}
+
+Guidelines:
+- Base urgency on stage progress, days since last activity, and expected close date
+- If there have been no activities in >7 days and the deal is open, urgency should be at least THIS_WEEK
+- If the deal is in Negotiation or Proposal Sent, urgency is at least THIS_WEEK
+- If the deal is at risk of stalling (open tasks, no recent contact), say so in the rationale
+- messageTemplate should be personalised to the lead/deal — include their name or deal title
+- Never recommend actions that are inappropriate (e.g. calling a lost/do-not-contact lead)
+- If the deal is Won or Lost, return a wrap-up action (e.g. "Log project kickoff" or "Send breakup note")
+- Keep headline extremely short and action-focused`;
+
+function buildNbaPrompt(input: CrmNextActionInput): string {
+  const { deal, recentActivities, openTaskCount } = input;
+  const today = new Date().toISOString().split("T")[0];
+  const amount = (deal.amountCents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: deal.currency,
+    maximumFractionDigits: 0,
+  });
+
+  const activityLines =
+    recentActivities.length === 0
+      ? "  (no activity yet)"
+      : recentActivities
+          .slice(0, 8)
+          .map(
+            (a) =>
+              `  [${a.occurredAt.slice(0, 10)}] ${a.kind}: ${a.summary}${a.isDone === false ? " (open task)" : ""}`,
+          )
+          .join("\n");
+
+  let dealStatus: string;
+  if (deal.isWonStage) {
+    dealStatus = "Status: WON";
+  } else if (deal.isLostStage) {
+    dealStatus = "Status: LOST";
+  } else {
+    dealStatus = `Status: ${deal.status}`;
+  }
+
+  const lines = [
+    `Today: ${today}`,
+    `Deal: ${deal.title}`,
+    `Amount: ${amount}`,
+    `Stage: ${deal.stageName} (probability ${deal.stageProbability}%)`,
+    dealStatus,
+    deal.expectedCloseAt
+      ? `Expected close: ${deal.expectedCloseAt.slice(0, 10)}`
+      : "Expected close: not set",
+    deal.followUpAt
+      ? `Next follow-up set: ${deal.followUpAt.slice(0, 10)}`
+      : "Follow-up: not scheduled",
+    deal.leadName ? `Lead: ${deal.leadName}` : null,
+    deal.leadCategory ? `Category: ${deal.leadCategory}` : null,
+    deal.leadWebsite ? `Website: ${deal.leadWebsite}` : null,
+    typeof deal.leadScore === "number"
+      ? `Lead score: ${deal.leadScore}/100`
+      : null,
+    deal.ownerName ? `Owner: ${deal.ownerName}` : null,
+    `Open tasks: ${openTaskCount}`,
+    `\nRecent activity (newest first):\n${activityLines}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `Recommend the best next action for this deal:\n\n${lines}`;
+}
+
+const VALID_URGENCIES = new Set(["NOW", "THIS_WEEK", "NEXT_WEEK", "LOW"]);
+
+export async function crmNextAction(
+  args: CrmNextActionInput,
+): Promise<CrmNextActionResult> {
+  const result = await aiComplete({
+    taskKind: "crm.nextAction",
+    organizationId: args.organizationId,
+    temperature: 0.3,
+    maxTokens: 400,
+    jsonMode: true,
+    messages: [
+      { role: "system", content: NBA_SYSTEM },
+      { role: "user", content: buildNbaPrompt(args) },
+    ],
+  });
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const text = result.text.trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end !== -1) {
+      parsed = JSON.parse(text.slice(start, end + 1)) as Record<
+        string,
+        unknown
+      >;
+    }
+  } catch {
+    // fallback below
+  }
+
+  const urgencyRaw =
+    typeof parsed.urgency === "string"
+      ? parsed.urgency.toUpperCase().trim()
+      : "";
+  const urgency = VALID_URGENCIES.has(urgencyRaw)
+    ? (urgencyRaw as CrmNextActionResult["urgency"])
+    : "THIS_WEEK";
+
+  return {
+    headline:
+      typeof parsed.headline === "string" && parsed.headline.trim()
+        ? parsed.headline.trim()
+        : "Follow up with the prospect",
+    rationale:
+      typeof parsed.rationale === "string" && parsed.rationale.trim()
+        ? parsed.rationale.trim()
+        : "No recent activity detected. Following up keeps the deal moving.",
+    action:
+      typeof parsed.action === "string" && parsed.action.trim()
+        ? parsed.action.trim()
+        : "Send a follow-up email or call the prospect",
+    urgency,
+    messageTemplate:
+      typeof parsed.messageTemplate === "string" &&
+      parsed.messageTemplate.trim()
+        ? parsed.messageTemplate.trim()
+        : `Hi, just checking in on our conversation about ${args.deal.title}. Are you still interested in moving forward?`,
     usage: result.usage,
     provider: result.provider,
     model: result.model,

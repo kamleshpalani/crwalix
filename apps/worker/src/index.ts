@@ -20,6 +20,8 @@ import {
   type OutreachSequenceTickJob,
   type ScoreLeadJob,
   type SearchIngestJob,
+  type VibeProspectJob,
+  type VibeProspectBulkJob,
 } from "@crawlix/shared";
 import { getConnection } from "./lib/redis";
 import { logger } from "./lib/logger";
@@ -39,6 +41,10 @@ import { runOutreachClassifyReply } from "./pipelines/outreach-classify-reply";
 import { runBillingDunning } from "./pipelines/billing-dunning";
 import { runDsarProcess } from "./pipelines/dsar-process";
 import { runWeeklyDigest } from "./pipelines/weekly-digest";
+import {
+  runVibeProspect,
+  runVibeProspectBulk,
+} from "./pipelines/vibe-prospect";
 import { startScheduler } from "./pipelines/scheduler";
 
 const connection = getConnection();
@@ -142,6 +148,18 @@ const systemWorker = makeWorker<DsarProcessJob>(
   2,
 );
 
+const vibeWorker = makeWorker<VibeProspectJob | VibeProspectBulkJob>(
+  QueueName.VIBE,
+  async (name, data) => {
+    if (name === JobName.VIBE_PROSPECT)
+      return runVibeProspect(data as VibeProspectJob);
+    if (name === JobName.VIBE_PROSPECT_BULK)
+      return runVibeProspectBulk(data as VibeProspectBulkJob);
+    logger.warn({ name }, "unknown vibe job");
+  },
+  3,
+);
+
 async function shutdown(sig: string): Promise<void> {
   logger.info({ sig }, "shutting down");
   await Promise.all([
@@ -151,6 +169,7 @@ async function shutdown(sig: string): Promise<void> {
     crmWorker.close(),
     outreachWorker.close(),
     systemWorker.close(),
+    vibeWorker.close(),
   ]);
   await connection.quit();
   process.exit(0);

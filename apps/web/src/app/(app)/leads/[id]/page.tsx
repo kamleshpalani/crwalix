@@ -23,6 +23,8 @@ import LeadTags from "./LeadTags";
 import AuditWebsiteButton from "./AuditWebsiteButton";
 import LeadContactEdit from "./LeadContactEdit";
 import ConvertToDealButton from "./ConvertToDealButton";
+import VibeProspectCard from "./VibeProspectCard";
+import BusinessScaleCard from "./BusinessScaleCard";
 
 export default async function LeadDetailPage({
   params,
@@ -48,6 +50,11 @@ export default async function LeadDetailPage({
     businessScale: BusinessScale | string | null;
     businessScaleConfidence: number | null;
     businessScaleSignals: unknown;
+    locationCount: number | null;
+    revenueEstimate: string | null;
+    employeeEstimate: number | null;
+    linkedinEmployeeRange: string | null;
+    vibeAnalysis: Record<string, unknown> | null;
   };
 
   const score = lead.score ?? lead.scores[0]?.score ?? null;
@@ -321,12 +328,28 @@ export default async function LeadDetailPage({
       )}
 
       <BusinessScaleCard
+        leadId={lead.id}
         scale={l.businessScale ?? null}
         confidence={l.businessScaleConfidence ?? null}
         signals={l.businessScaleSignals}
+        locationCount={l.locationCount ?? null}
+        revenueEstimate={l.revenueEstimate ?? null}
+        employeeEstimate={l.employeeEstimate ?? null}
+        linkedinEmployeeRange={l.linkedinEmployeeRange ?? null}
       />
 
       <WebsiteAuditCard lead={lead} />
+
+      <VibeProspectCard
+        leadId={lead.id}
+        initial={
+          l.vibeAnalysis
+            ? (l.vibeAnalysis as unknown as Parameters<
+                typeof VibeProspectCard
+              >[0]["initial"])
+            : null
+        }
+      />
 
       <Card title="Notes">
         <LeadNotes leadId={lead.id} initial={lead.notes ?? null} />
@@ -452,64 +475,6 @@ function mergeTone(conf: number): "emerald" | "amber" | "slate" {
   if (conf >= 90) return "emerald";
   if (conf >= 70) return "amber";
   return "slate";
-}
-
-type BusinessScaleSignalsPayload = {
-  reasoning?: string;
-  signals?: Array<{ signal?: string; weight?: number; scale?: string }>;
-};
-
-function BusinessScaleCard({
-  scale,
-  confidence,
-  signals,
-}: {
-  scale: BusinessScale | string | null;
-  confidence: number | null;
-  signals: unknown;
-}) {
-  const payload = (signals ?? null) as BusinessScaleSignalsPayload | null;
-  const list = Array.isArray(payload?.signals) ? payload!.signals! : [];
-  const tone =
-    scale === "LARGE" ? "violet" : scale === "MID_MARKET" ? "amber" : "emerald";
-  return (
-    <div className="glass p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-semibold text-ink-900">Business scale</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Badge tone={scale && scale !== "UNKNOWN" ? tone : "slate"}>
-              {BUSINESS_SCALE_LABELS[(scale as BusinessScale) ?? "UNKNOWN"] ??
-                "Unclassified"}
-            </Badge>
-            {typeof confidence === "number" && confidence > 0 && (
-              <span className="text-xs text-ink-600">
-                confidence <span className="font-mono">{confidence}/100</span>
-              </span>
-            )}
-          </div>
-          {payload?.reasoning && (
-            <p className="mt-2 text-sm text-ink-700">{payload.reasoning}</p>
-          )}
-        </div>
-      </div>
-      {list.length > 0 && (
-        <ul className="mt-3 divide-y divide-white/60 text-xs">
-          {list.slice(0, 8).map((s, i) => (
-            <li
-              key={i}
-              className="flex items-center justify-between gap-3 py-1.5"
-            >
-              <span className="text-ink-700">{s.signal}</span>
-              <span className="text-ink-500 font-mono">
-                {s.scale} +{s.weight}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 const PROVIDER_LABELS: Record<string, string> = {

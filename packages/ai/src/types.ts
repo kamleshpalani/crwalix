@@ -14,7 +14,9 @@ export type AiTaskKind =
   | "support.answer"
   | "search.parse"
   | "lead.score"
-  | "website.audit";
+  | "website.audit"
+  | "vibe.prospect"
+  | "crm.nextAction";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";

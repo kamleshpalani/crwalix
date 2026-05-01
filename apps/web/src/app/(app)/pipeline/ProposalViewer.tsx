@@ -48,11 +48,31 @@ export default function ProposalViewer({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Send-to-client modal state
+  const [showSendForm, setShowSendForm] = useState(false);
+  const [sendEmail, setSendEmail] = useState("");
+  const [sendClientName, setSendClientName] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{
+    ok: boolean;
+    error?: string | null;
+  } | null>(null);
+
+  // Convert-to-project state
+  const [converting, setConverting] = useState(false);
+  const [convertedProjectId, setConvertedProjectId] = useState<string | null>(
+    null,
+  );
+
   useEffect(() => {
     if (!proposalId) {
       setProposal(null);
       setEditingBody(null);
       setError(null);
+      setShowSendForm(false);
+      setSendResult(null);
+      setConvertedProjectId(null);
       return;
     }
     let cancelled = false;
@@ -81,11 +101,17 @@ export default function ProposalViewer({
   useEffect(() => {
     if (!proposalId) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (showSendForm) {
+          setShowSendForm(false);
+          return;
+        }
+        onClose();
+      }
     }
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  }, [proposalId, onClose]);
+  }, [proposalId, onClose, showSendForm]);
 
   async function patch(body: Record<string, unknown>) {
     if (!proposalId) return;
@@ -126,18 +152,93 @@ export default function ProposalViewer({
     }
   }
 
+  async function submitSend(e: React.FormEvent) {
+    e.preventDefault();
+    if (!proposalId || !sendEmail) return;
+    setSending(true);
+    setSendResult(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/crm/proposals/${proposalId}/send`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          toEmail: sendEmail,
+          clientName: sendClientName || undefined,
+          message: sendMessage || undefined,
+        }),
+      });
+      const json = (await res.json()) as {
+        proposal?: Proposal;
+        email?: { ok: boolean; error?: string | null };
+        error?: { message?: string };
+      };
+      if (!res.ok)
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      if (json.proposal) setProposal(json.proposal);
+      setSendResult(json.email ?? { ok: true });
+      onUpdated();
+      // Keep form visible to show success; user can close.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function convertToProject() {
+    if (!proposalId) return;
+    setConverting(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/v1/crm/proposals/${proposalId}/convert-to-project`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      const json = (await res.json()) as {
+        project?: { id: string; name: string };
+        error?: { message?: string };
+      };
+      if (!res.ok)
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      if (json.project) setConvertedProjectId(json.project.id);
+      onUpdated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Conversion failed");
+    } finally {
+      setConverting(false);
+    }
+  }
+
   if (!proposalId) return null;
 
   const editable =
     proposal?.status === ProposalStatus.DRAFT ||
     proposal?.status === ProposalStatus.READY;
+  const canSend =
+    proposal?.status === ProposalStatus.DRAFT ||
+    proposal?.status === ProposalStatus.READY ||
+    proposal?.status === ProposalStatus.SENT ||
+    proposal?.status === ProposalStatus.VIEWED;
+  const canConvertToProject =
+    proposal?.status === ProposalStatus.ACCEPTED && !convertedProjectId;
   const nextStatuses = proposal ? (TRANSITIONS[proposal.status] ?? []) : [];
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4 backdrop-blur-sm"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) {
+          if (showSendForm) {
+            setShowSendForm(false);
+            return;
+          }
+          onClose();
+        }
       }}
       role="presentation"
     >
@@ -160,6 +261,13 @@ export default function ProposalViewer({
                     · Viewed {new Date(proposal.viewedAt).toLocaleDateString()}
                   </>
                 )}
+                {proposal.acceptedAt && (
+                  <>
+                    {" "}
+                    · Accepted{" "}
+                    {new Date(proposal.acceptedAt).toLocaleDateString()}
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -179,6 +287,84 @@ export default function ProposalViewer({
           </p>
         )}
 
+        {/* Send-to-client inline form */}
+        {showSendForm && (
+          <form
+            onSubmit={(e) => void submitSend(e)}
+            className="flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4"
+          >
+            <p className="text-sm font-medium text-indigo-900">
+              Send proposal to client
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <input
+                type="email"
+                required
+                placeholder="client@example.com"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                className="input flex-1 min-w-[200px] text-sm"
+                aria-label="Client email"
+              />
+              <input
+                type="text"
+                placeholder="Client name (optional)"
+                value={sendClientName}
+                onChange={(e) => setSendClientName(e.target.value)}
+                className="input flex-1 min-w-[160px] text-sm"
+              />
+            </div>
+            <textarea
+              placeholder="Personal message to include in the email (optional)"
+              value={sendMessage}
+              onChange={(e) => setSendMessage(e.target.value)}
+              rows={2}
+              className="input w-full resize-none text-sm"
+            />
+            {sendResult && (
+              <p
+                className={`text-xs ${sendResult.ok ? "text-emerald-700" : "text-rose-700"}`}
+              >
+                {sendResult.ok
+                  ? "Proposal sent successfully!"
+                  : `Email delivery warning: ${sendResult.error ?? "unknown error"}`}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="btn-primary text-xs"
+                disabled={sending}
+              >
+                {sending ? "Sending…" : "Send email"}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={() => {
+                  setShowSendForm(false);
+                  setSendResult(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Convert-to-project success banner */}
+        {convertedProjectId && (
+          <p className="rounded-lg border-l-4 border-emerald-400 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-800">
+            Project created.{" "}
+            <a
+              href={`/projects/${convertedProjectId}`}
+              className="underline font-medium"
+            >
+              Open project →
+            </a>
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-2 border-b border-white/40 pb-3">
           {nextStatuses.map((s) => (
             <button
@@ -191,6 +377,30 @@ export default function ProposalViewer({
               Mark as {s}
             </button>
           ))}
+
+          {/* Send to client */}
+          {canSend && !showSendForm && (
+            <button
+              type="button"
+              className="btn-primary text-xs"
+              onClick={() => setShowSendForm(true)}
+            >
+              Send to client
+            </button>
+          )}
+
+          {/* Convert to project */}
+          {canConvertToProject && (
+            <button
+              type="button"
+              className="btn-primary text-xs"
+              disabled={converting}
+              onClick={() => void convertToProject()}
+            >
+              {converting ? "Creating project…" : "Convert to project"}
+            </button>
+          )}
+
           {proposal?.shareToken && (
             <button
               type="button"

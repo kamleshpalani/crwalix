@@ -496,13 +496,21 @@ model Lead {
   aiScoreReason     String?
   /// Timestamp of last AI scoring run.
   aiScoredAt        DateTime?
-  /// Business-scale classification (SME | MID_MARKET | LARGE | UNKNOWN).
+  /// Business-scale classification: MICRO | SMALL | MEDIUM | LARGE | ENTERPRISE | UNKNOWN.
   /// Derived from public signals (categories, reviews, website tech, etc.).
   businessScale     String         @default("UNKNOWN")
   /// 0–100 confidence in the classification.
   businessScaleConfidence Int?
   /// Contributing signals + raw bucket scores from the classifier.
   businessScaleSignals Json?
+  /// §11 — Number of physical locations / branches.
+  locationCount     Int?
+  /// §11 — Publicly available revenue band string, e.g. "$1M–$10M". Legal sources only.
+  revenueEstimate   String?
+  /// §11 — Estimated employee headcount from public sources.
+  employeeEstimate  Int?
+  /// §11 — LinkedIn employee-count band string, e.g. "11-50" or "1001-5000".
+  linkedinEmployeeRange String?
   /// User-facing industry (free-form, distinct from auto-derived categories).
   industry          String?
   /// Operating hours payload (provider-specific JSON, normalized when possible).
@@ -1078,6 +1086,8 @@ model Deal {
   status         DealStatus @default(OPEN)
   ownerUserId    String?
   expectedCloseAt DateTime?
+  /// Optional next follow-up reminder date set by the owner.
+  followUpAt     DateTime?
   closedAt       DateTime?
   metadata       Json?
   createdAt      DateTime   @default(now())
@@ -1086,6 +1096,7 @@ model Deal {
   @@index([organizationId, stageId])
   @@index([organizationId, leadId])
   @@index([organizationId, status])
+  @@index([organizationId, followUpAt])
 }
 
 model Activity {
@@ -1101,11 +1112,16 @@ model Activity {
   /// Human-readable summary; full body lives in metadata for richer kinds.
   summary        String
   metadata       Json?
+  /// Due date for TASK activities.
+  dueAt          DateTime?
+  /// Completion flag for TASK activities.
+  isDone         Boolean      @default(false)
   occurredAt     DateTime     @default(now())
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, dealId, occurredAt])
   @@index([organizationId, leadId, occurredAt])
+  @@index([organizationId, dealId, isDone, dueAt])
 }
 
 model Proposal {
