@@ -154,8 +154,8 @@ export async function POST(
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
         costUsd: result.usage.costUsd,
-      } as never,
-    },
+      },
+    } as never,
   });
 
   auditService.log({
