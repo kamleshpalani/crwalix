@@ -344,7 +344,7 @@ export default async function LeadDetailPage({
         leadId={lead.id}
         initial={
           l.vibeAnalysis
-            ? (l.vibeAnalysis as Parameters<
+            ? (l.vibeAnalysis as unknown as Parameters<
                 typeof VibeProspectCard
               >[0]["initial"])
             : null
