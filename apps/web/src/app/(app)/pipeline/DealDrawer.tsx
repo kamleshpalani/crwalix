@@ -436,7 +436,9 @@ export default function DealDrawer({ pipeline, dealId, onClose }: Props) {
         {/* â”€â”€ AI Next-Best-Action â”€â”€ */}
         <section className="space-y-2 rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50 to-fuchsia-50 p-3">
           <div className="flex items-center justify-between">
-            <span className="label text-brand-700">âœ¦ AI Next Best Action</span>
+            <span className="label text-brand-700">
+              âœ¦ AI Next Best Action
+            </span>
             <button
               type="button"
               disabled={nbaLoading || !deal}
@@ -585,7 +587,10 @@ export default function DealDrawer({ pipeline, dealId, onClose }: Props) {
             </select>
             {noteKind === ActivityKind.TASK && (
               <div className="flex items-center gap-2 text-sm">
-                <label htmlFor="noteDueAt" className="shrink-0 text-xs text-ink-600">
+                <label
+                  htmlFor="noteDueAt"
+                  className="shrink-0 text-xs text-ink-600"
+                >
                   Due date
                 </label>
                 <input
@@ -626,10 +631,9 @@ export default function DealDrawer({ pipeline, dealId, onClose }: Props) {
           <span className="label">Timeline</span>
           {loading && activities.length === 0 ? (
             <p className="text-xs text-ink-500">Loadingâ€¦</p>
-          ) : (
-            activities.length === 0 ? (
+          ) : activities.length === 0 ? (
             <p className="text-xs text-ink-400">No activity yet.</p>
-            ) : (
+          ) : (
             <ol className="space-y-2">
               {activities.map((a) => (
                 <li
