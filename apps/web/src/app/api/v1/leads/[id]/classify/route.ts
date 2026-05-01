@@ -144,7 +144,7 @@ export async function POST(
     },
   });
 
-  auditService.log({
+  void auditService.record({
     orgId: ctx.orgId,
     userId: ctx.userId,
     action: "lead.classify",
