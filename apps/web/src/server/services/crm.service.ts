@@ -9,6 +9,7 @@ import {
   type CreateActivityInput,
   type CreateDealInput,
   type DealFilter,
+  type UpdateActivityInput,
   type UpdateDealInput,
   type UpdateProposalInput,
 } from "@crawlix/shared";
@@ -16,6 +17,7 @@ import { enqueue } from "@/lib/queue";
 import { projectKickoffService } from "./project-kickoff.service";
 import { emitNotification } from "@/server/lib/notify";
 import { publishDomainEvent } from "@/server/lib/domain-events";
+import { crmNextAction } from "@crawlix/ai";
 
 /**
  * CRM service: pipelines, deals, activities.
@@ -212,6 +214,7 @@ export const crmService = {
       if (input.ownerUserId !== undefined) data.ownerUserId = input.ownerUserId;
       if (input.expectedCloseAt !== undefined)
         data.expectedCloseAt = input.expectedCloseAt;
+      if (input.followUpAt !== undefined) data.followUpAt = input.followUpAt;
       if (input.metadata !== undefined) data.metadata = input.metadata as never;
 
       let stageChanged = false;
@@ -430,8 +433,116 @@ export const crmService = {
           summary: input.summary,
           metadata: (input.metadata ?? null) as never,
           occurredAt: input.occurredAt ?? new Date(),
+          dueAt: input.dueAt ?? null,
+          isDone: false,
         },
       });
+    });
+  },
+
+  /** Patch an existing activity — primarily to toggle task completion or update dueAt. */
+  async updateActivity(
+    orgId: string,
+    dealId: string,
+    activityId: string,
+    input: UpdateActivityInput,
+  ) {
+    return withOrg(orgId, async (tx) => {
+      const existing = await tx.activity.findFirst({
+        where: { id: activityId, dealId, organizationId: orgId },
+      });
+      if (!existing) return null;
+      const data: Record<string, unknown> = {};
+      if (input.isDone !== undefined) data.isDone = input.isDone;
+      if (input.dueAt !== undefined) data.dueAt = input.dueAt;
+      if (input.summary !== undefined) data.summary = input.summary;
+      return tx.activity.update({
+        where: { id: activityId },
+        data,
+      });
+    });
+  },
+
+  /**
+   * Run the AI next-best-action recommendation for a deal.
+   * Builds context from deal + recent activities + stage and calls Claude/GPT.
+   */
+  async getNextAction(orgId: string, dealId: string) {
+    return withOrg(orgId, async (tx) => {
+      const deal = await tx.deal.findFirst({
+        where: { id: dealId, organizationId: orgId },
+      });
+      if (!deal) return null;
+
+      const [stage, activities] = await Promise.all([
+        tx.pipelineStage.findFirst({
+          where: { id: deal.stageId, organizationId: orgId },
+        }),
+        tx.activity.findMany({
+          where: { organizationId: orgId, dealId },
+          orderBy: { occurredAt: "desc" },
+          take: 10,
+          select: {
+            kind: true,
+            summary: true,
+            occurredAt: true,
+            isDone: true,
+          },
+        }),
+      ]);
+
+      const openTaskCount = await tx.activity.count({
+        where: {
+          organizationId: orgId,
+          dealId,
+          kind: "TASK",
+          isDone: false,
+        },
+      });
+
+      // Optionally load lead info for richer NBA context.
+      const lead = deal.leadId
+        ? await tx.lead.findFirst({
+            where: { id: deal.leadId, organizationId: orgId },
+            select: {
+              name: true,
+              categoryPrimary: true,
+              website: true,
+              aiScore: true,
+            },
+          })
+        : null;
+
+      const result = await crmNextAction({
+        organizationId: orgId,
+        deal: {
+          title: deal.title,
+          amountCents: deal.amountCents,
+          currency: deal.currency,
+          status: deal.status,
+          stageName: stage?.name ?? "Unknown",
+          stageProbability: stage?.probability ?? 0,
+          isWonStage: stage?.isWon ?? false,
+          isLostStage: stage?.isLost ?? false,
+          expectedCloseAt: deal.expectedCloseAt?.toISOString() ?? null,
+          followUpAt:
+            (deal as { followUpAt?: Date | null }).followUpAt?.toISOString() ??
+            null,
+          leadName: lead?.name ?? null,
+          leadCategory: lead?.categoryPrimary ?? null,
+          leadWebsite: lead?.website ?? null,
+          leadScore: typeof lead?.aiScore === "number" ? lead.aiScore : null,
+        },
+        recentActivities: activities.map((a) => ({
+          kind: a.kind,
+          summary: a.summary,
+          occurredAt: a.occurredAt.toISOString(),
+          isDone: a.isDone,
+        })),
+        openTaskCount,
+      });
+
+      return result;
     });
   },
 
@@ -730,6 +841,7 @@ function toDealListItem(d: {
   status: DealStatus;
   ownerUserId: string | null;
   expectedCloseAt: Date | null;
+  followUpAt?: Date | null;
   closedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -746,6 +858,7 @@ function toDealListItem(d: {
     status: d.status,
     ownerUserId: d.ownerUserId,
     expectedCloseAt: d.expectedCloseAt?.toISOString() ?? null,
+    followUpAt: d.followUpAt?.toISOString() ?? null,
     closedAt: d.closedAt?.toISOString() ?? null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),

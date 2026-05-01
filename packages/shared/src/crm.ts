@@ -76,6 +76,7 @@ export const UpdateDealSchema = z
     status: z.nativeEnum(DealStatus).optional(),
     ownerUserId: z.string().uuid().nullable().optional(),
     expectedCloseAt: z.coerce.date().nullable().optional(),
+    followUpAt: z.coerce.date().nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No fields to update" });
@@ -94,6 +95,7 @@ export const DealListItemSchema = z.object({
   status: z.nativeEnum(DealStatus),
   ownerUserId: z.string().nullable(),
   expectedCloseAt: z.string().nullable(),
+  followUpAt: z.string().nullable(),
   closedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -107,8 +109,20 @@ export const CreateActivitySchema = z.object({
   summary: z.string().min(1).max(500),
   metadata: z.record(z.unknown()).optional(),
   occurredAt: z.coerce.date().optional(),
+  /** Due date — relevant when kind = TASK. */
+  dueAt: z.coerce.date().optional(),
 });
 export type CreateActivityInput = z.infer<typeof CreateActivitySchema>;
+
+/** Patch a TASK activity (toggle done, update due date). */
+export const UpdateActivitySchema = z
+  .object({
+    isDone: z.boolean().optional(),
+    dueAt: z.coerce.date().nullable().optional(),
+    summary: z.string().min(1).max(500).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "No fields to update" });
+export type UpdateActivityInput = z.infer<typeof UpdateActivitySchema>;
 
 export const ActivityListFilterSchema = z.object({
   page: z.coerce.number().int().positive().default(1),

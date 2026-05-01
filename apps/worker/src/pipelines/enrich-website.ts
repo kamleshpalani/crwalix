@@ -1414,6 +1414,10 @@ export async function runWebsiteEnrichment(job: EnrichmentJob): Promise<void> {
           categories: true,
           reviewCount: true,
           rating: true,
+          locationCount: true,
+          revenueEstimate: true,
+          employeeEstimate: true,
+          linkedinEmployeeRange: true,
         },
       }),
     );
@@ -1472,6 +1476,10 @@ export async function runWebsiteEnrichment(job: EnrichmentJob): Promise<void> {
     pageBytes: result.signals.pageBytes,
     hasFacebook: !!result.signals.facebookUrl,
     hasInstagram: !!result.signals.instagramUrl,
+    locationCount: lead.locationCount ?? null,
+    revenueEstimate: lead.revenueEstimate ?? null,
+    employeeEstimate: lead.employeeEstimate ?? null,
+    linkedinEmployeeRange: lead.linkedinEmployeeRange ?? null,
   });
 
   await withOrg(job.organizationId, async (tx) => {
